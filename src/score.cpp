@@ -1,6 +1,6 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2024 The Brainlearn developers (see AUTHORS file)
+  Brainlearn, a UCI chess playing engine derived from Brainlearn
+  Copyright (C) 2004-2025 The Brainlearn developers (see AUTHORS file)
 
   Brainlearn is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -29,7 +29,7 @@ namespace Brainlearn {
 Score::Score(Value v, const Position& pos) {
     assert(-VALUE_INFINITE < v && v < VALUE_INFINITE);
 
-    if (std::abs(v) < VALUE_TB_WIN_IN_MAX_PLY)
+    if (!is_decisive(v))
     {
         score = InternalUnits{UCIEngine::to_cp(v, pos)};
     }

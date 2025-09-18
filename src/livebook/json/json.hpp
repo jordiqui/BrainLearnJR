@@ -133,7 +133,7 @@
 
 #ifndef NLOHMANN_JSON_NAMESPACE_END
     #define NLOHMANN_JSON_NAMESPACE_END \
-        }  /* namespace (inline namespace) NOLINT(readability/namespace) */ \
+        } /* namespace (inline namespace) NOLINT(readability/namespace) */ \
         }  // namespace nlohmann
 #endif
 
@@ -2083,7 +2083,7 @@ JSON_HEDLEY_DIAGNOSTIC_POP
             #else
                 #include <stdint.h>
                 #define JSON_HEDLEY_IS_CONSTEXPR_(expr) \
-                    _Generic((1 ? (void*) ((intptr_t) * 0) : (int*) 0), int*: 1, void*: 0)
+                    _Generic((1 ? (void*) ((intptr_t) *0) : (int*) 0), int*: 1, void*: 0)
             #endif
         #elif defined(JSON_HEDLEY_GCC_VERSION) || defined(JSON_HEDLEY_INTEL_VERSION) \
           || defined(JSON_HEDLEY_TINYC_VERSION) || defined(JSON_HEDLEY_TI_ARMCL_VERSION) \
@@ -3804,8 +3804,8 @@ struct actual_object_comparator {
     using object_t            = typename BasicJsonType::object_t;
     using object_comparator_t = typename BasicJsonType::default_object_comparator_t;
     using type                = typename std::conditional<has_key_compare<object_t>::value,
-                                           typename object_t::key_compare,
-                                           object_comparator_t>::type;
+                                                          typename object_t::key_compare,
+                                                          object_comparator_t>::type;
 };
 
 template<typename BasicJsonType>
@@ -5375,7 +5375,7 @@ class iteration_proxy_value {
     using reference         = value_type&;
     using iterator_category = std::input_iterator_tag;
     using string_type       = typename std::remove_cv<
-      typename std::remove_reference<decltype(std::declval<IteratorType>().key())>::type>::type;
+            typename std::remove_reference<decltype(std::declval<IteratorType>().key())>::type>::type;
 
    private:
     /// the iterator
@@ -8860,8 +8860,8 @@ scan_number_done:
             {
                 // escape control characters
                 std::array<char, 9> cs{{}};
-                static_cast<void>(
-                  (std::snprintf)(cs.data(), cs.size(), "<U+%.4X>",
+                static_cast<void>((
+                  std::snprintf) (cs.data(), cs.size(), "<U+%.4X>",
                                   static_cast<unsigned char>(
                                     c)));  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
                 result += cs.data();
@@ -9516,10 +9516,11 @@ class binary_reader {
         default :  // anything else not supported (yet)
         {
             std::array<char, 3> cr{{}};
-            static_cast<void>((std::snprintf)(
-              cr.data(), cr.size(), "%.2hhX",
-              static_cast<unsigned char>(
-                element_type)));  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
+            static_cast<void>((
+              std::
+                snprintf) (cr.data(), cr.size(), "%.2hhX",
+                           static_cast<unsigned char>(
+                             element_type)));  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
             const std::string cr_str{cr.data()};
             return sax->parse_error(
               element_type_parse_position, cr_str,
@@ -12221,9 +12222,9 @@ class binary_reader {
     std::string get_token_string() const {
         std::array<char, 3> cr{{}};
         static_cast<void>(
-          (std::snprintf)(cr.data(), cr.size(), "%.2hhX",
-                          static_cast<unsigned char>(
-                            current)));  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
+          (std::snprintf) (cr.data(), cr.size(), "%.2hhX",
+                           static_cast<unsigned char>(
+                             current)));  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
         return std::string{cr.data()};
     }
 
@@ -18401,17 +18402,19 @@ class serializer {
                         {
                             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
                             static_cast<void>(
-                              (std::snprintf)(string_buffer.data() + bytes, 7, "\\u%04x",
-                                              static_cast<std::uint16_t>(codepoint)));
+                              (std::snprintf) (string_buffer.data() + bytes, 7, "\\u%04x",
+                                               static_cast<std::uint16_t>(codepoint)));
                             bytes += 6;
                         }
                         else
                         {
                             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-                            static_cast<void>((std::snprintf)(
-                              string_buffer.data() + bytes, 13, "\\u%04x\\u%04x",
-                              static_cast<std::uint16_t>(0xD7C0u + (codepoint >> 10u)),
-                              static_cast<std::uint16_t>(0xDC00u + (codepoint & 0x3FFu))));
+                            static_cast<void>((std::snprintf) (string_buffer.data() + bytes, 13,
+                                                               "\\u%04x\\u%04x",
+                                                               static_cast<std::uint16_t>(
+                                                                 0xD7C0u + (codepoint >> 10u)),
+                                                               static_cast<std::uint16_t>(
+                                                                 0xDC00u + (codepoint & 0x3FFu))));
                             bytes += 12;
                         }
                     }
@@ -18779,7 +18782,7 @@ class serializer {
         // the actual conversion
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
         std::ptrdiff_t len =
-          (std::snprintf)(number_buffer.data(), number_buffer.size(), "%.*g", d, x);
+          (std::snprintf) (number_buffer.data(), number_buffer.size(), "%.*g", d, x);
 
         // negative value indicates an error
         JSON_ASSERT(len > 0);

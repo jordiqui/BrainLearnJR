@@ -1,6 +1,6 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2024 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
+  Brainlearn, a UCI chess playing engine derived from Brainlearn
+  Copyright (C) 2004-2025 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
 
   Brainlearn is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 #define MISC_H_INCLUDED
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <chrono>
 #include <cstddef>
@@ -88,6 +89,7 @@ void dbg_stdev_of(int64_t value, int slot = 0);
 void dbg_extremes_of(int64_t value, int slot = 0);
 void dbg_correl_of(int64_t value1, int64_t value2, int slot = 0);
 void dbg_print();
+void dbg_clear();
 
 using TimePoint = std::chrono::milliseconds::rep;  // A value in milliseconds
 static_assert(sizeof(TimePoint) == sizeof(int64_t), "TimePoint should be 64 bits");
@@ -135,11 +137,8 @@ void sync_cout_start();
 void sync_cout_end();
 
 // True if and only if the binary is compiled on a little-endian machine
-static inline const union {
-    uint32_t i;
-    char     c[4];
-} Le                                    = {0x01020304};
-static inline const bool IsLittleEndian = (Le.c[0] == 4);
+static inline const std::uint16_t Le             = 1;
+static inline const bool          IsLittleEndian = *reinterpret_cast<const char*>(&Le) == 1;
 
 
 template<typename T, std::size_t MaxSize>
@@ -155,6 +154,97 @@ class ValueList {
    private:
     T           values_[MaxSize];
     std::size_t size_ = 0;
+};
+
+
+template<typename T, std::size_t Size, std::size_t... Sizes>
+class MultiArray;
+
+namespace Detail {
+
+template<typename T, std::size_t Size, std::size_t... Sizes>
+struct MultiArrayHelper {
+    using ChildType = MultiArray<T, Sizes...>;
+};
+
+template<typename T, std::size_t Size>
+struct MultiArrayHelper<T, Size> {
+    using ChildType = T;
+};
+
+template<typename To, typename From>
+constexpr bool is_strictly_assignable_v =
+  std::is_assignable_v<To&, From> && (std::is_same_v<To, From> || !std::is_convertible_v<From, To>);
+
+}
+
+// MultiArray is a generic N-dimensional array.
+// The template parameters (Size and Sizes) encode the dimensions of the array.
+template<typename T, std::size_t Size, std::size_t... Sizes>
+class MultiArray {
+    using ChildType = typename Detail::MultiArrayHelper<T, Size, Sizes...>::ChildType;
+    using ArrayType = std::array<ChildType, Size>;
+    ArrayType data_;
+
+   public:
+    using value_type             = typename ArrayType::value_type;
+    using size_type              = typename ArrayType::size_type;
+    using difference_type        = typename ArrayType::difference_type;
+    using reference              = typename ArrayType::reference;
+    using const_reference        = typename ArrayType::const_reference;
+    using pointer                = typename ArrayType::pointer;
+    using const_pointer          = typename ArrayType::const_pointer;
+    using iterator               = typename ArrayType::iterator;
+    using const_iterator         = typename ArrayType::const_iterator;
+    using reverse_iterator       = typename ArrayType::reverse_iterator;
+    using const_reverse_iterator = typename ArrayType::const_reverse_iterator;
+
+    constexpr auto&       at(size_type index) noexcept { return data_.at(index); }
+    constexpr const auto& at(size_type index) const noexcept { return data_.at(index); }
+
+    constexpr auto&       operator[](size_type index) noexcept { return data_[index]; }
+    constexpr const auto& operator[](size_type index) const noexcept { return data_[index]; }
+
+    constexpr auto&       front() noexcept { return data_.front(); }
+    constexpr const auto& front() const noexcept { return data_.front(); }
+    constexpr auto&       back() noexcept { return data_.back(); }
+    constexpr const auto& back() const noexcept { return data_.back(); }
+
+    auto*       data() { return data_.data(); }
+    const auto* data() const { return data_.data(); }
+
+    constexpr auto begin() noexcept { return data_.begin(); }
+    constexpr auto end() noexcept { return data_.end(); }
+    constexpr auto begin() const noexcept { return data_.begin(); }
+    constexpr auto end() const noexcept { return data_.end(); }
+    constexpr auto cbegin() const noexcept { return data_.cbegin(); }
+    constexpr auto cend() const noexcept { return data_.cend(); }
+
+    constexpr auto rbegin() noexcept { return data_.rbegin(); }
+    constexpr auto rend() noexcept { return data_.rend(); }
+    constexpr auto rbegin() const noexcept { return data_.rbegin(); }
+    constexpr auto rend() const noexcept { return data_.rend(); }
+    constexpr auto crbegin() const noexcept { return data_.crbegin(); }
+    constexpr auto crend() const noexcept { return data_.crend(); }
+
+    constexpr bool      empty() const noexcept { return data_.empty(); }
+    constexpr size_type size() const noexcept { return data_.size(); }
+    constexpr size_type max_size() const noexcept { return data_.max_size(); }
+
+    template<typename U>
+    void fill(const U& v) {
+        static_assert(Detail::is_strictly_assignable_v<T, U>,
+                      "Cannot assign fill value to entry type");
+        for (auto& ele : data_)
+        {
+            if constexpr (sizeof...(Sizes) == 0)
+                ele = v;
+            else
+                ele.fill(v);
+        }
+    }
+
+    constexpr void swap(MultiArray<T, Size, Sizes...>& other) noexcept { data_.swap(other.data_); }
 };
 
 
@@ -219,16 +309,16 @@ inline uint64_t mul_hi64(uint64_t a, uint64_t b) {
 
 struct CommandLine {
    public:
-    CommandLine(int, char**);  //from Khalid
+    CommandLine(int, char**);  //from learning
 
     int    argc;
     char** argv;
-    //from Khalid begin
+    //from learning begin
     std::string        binaryDirectory;   // path of the executable directory
     std::string        workingDirectory;  // path of the working directory
     static std::string get_working_directory();
     static std::string get_binary_directory(std::string argv0, std::string workingDirectory);
-    //from Khalid end
+    //from learning end
 };
 
 namespace Utility {
@@ -243,7 +333,24 @@ void move_to_front(std::vector<T>& vec, Predicate pred) {
     }
 }
 }
-//begin from khalid
+
+#if defined(__GNUC__) && !defined(__clang__)
+    #if __GNUC__ >= 13
+        #define sf_assume(cond) __attribute__((assume(cond)))
+    #else
+        #define sf_assume(cond) \
+            do \
+            { \
+                if (!(cond)) \
+                    __builtin_unreachable(); \
+            } while (0)
+    #endif
+#else
+    // do nothing for other compilers
+    #define sf_assume(cond)
+#endif
+
+//begin from learning
 #define EMPTY "<empty>"
 
 class Util {
@@ -272,7 +379,7 @@ class Util {
 
     static std::string format_string(const char* const fmt, ...);
 };
-//end from khalid
+//end from learning
 
 }  // namespace Brainlearn
 

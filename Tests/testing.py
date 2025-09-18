@@ -49,10 +49,10 @@ class TSAN:
         with open(f"tsan.supp", "w") as f:
             f.write(
                 """
-race:ShashChess::TTEntry::read
-race:ShashChess::TTEntry::save
-race:ShashChess::TranspositionTable::probe
-race:ShashChess::TranspositionTable::hashfull
+race:Brainlearn::TTEntry::read
+race:Brainlearn::TTEntry::save
+race:Brainlearn::TranspositionTable::probe
+race:Brainlearn::TranspositionTable::hashfull
 """
             )
 
@@ -97,14 +97,17 @@ class Syzygy:
                 tarball_path = os.path.join(tmpdirname, f"{file}.tar.gz")
 
                 response = requests.get(url, stream=True)
-                with open(tarball_path, 'wb') as f:
+                with open(tarball_path, "wb") as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
 
                 with tarfile.open(tarball_path, "r:gz") as tar:
                     tar.extractall(tmpdirname)
 
-                shutil.move(os.path.join(tmpdirname, file), os.path.join(PATH, "syzygy"))
+                shutil.move(
+                    os.path.join(tmpdirname, file), os.path.join(PATH, "syzygy")
+                )
+
 
 class OrderedClassMembers(type):
     @classmethod
@@ -150,6 +153,7 @@ class MiniTestFramework:
         self.failed_test_suites = 0
         self.passed_tests = 0
         self.failed_tests = 0
+        self.stop_on_failure = True
 
     def has_failed(self) -> bool:
         return self.failed_test_suites > 0
@@ -167,6 +171,9 @@ class MiniTestFramework:
                         self.failed_test_suites += 1
                     else:
                         self.passed_test_suites += 1
+                except Exception as e:
+                    self.failed_test_suites += 1
+                    print(f"\n{RED_COLOR}Error: {e}{RESET_COLOR}")
                 finally:
                     os.chdir(original_cwd)
 
@@ -226,6 +233,10 @@ class MiniTestFramework:
             if isinstance(e, AssertionError):
                 self.__handle_assertion_error(t0, method)
 
+            if self.stop_on_failure:
+                self.__print_buffer_output(buffer)
+                raise e
+
             fails += 1
         finally:
             self.__print_buffer_output(buffer)
@@ -269,7 +280,7 @@ class MiniTestFramework:
         print(f"    {GREEN_COLOR}✓{RESET_COLOR}{add}", flush=True)
 
 
-class ShashChess:
+class Brainlearn:
     def __init__(
         self,
         prefix: List[str],
@@ -286,6 +297,11 @@ class ShashChess:
 
         self.start()
 
+    def _check_process_alive(self):
+        if not self.process or self.process.poll() is not None:
+            print("\n".join(self.output))
+            raise RuntimeError("Brainlearn process has terminated")
+
     def start(self):
         if self.cli:
             self.process = subprocess.run(
@@ -294,7 +310,10 @@ class ShashChess:
                 text=True,
             )
 
-            self.process.stdout
+            if self.process.returncode != 0:
+                print(self.process.stdout)
+                print(self.process.stderr)
+                print(f"Process failed with return code {self.process.returncode}")
 
             return
 
@@ -312,7 +331,9 @@ class ShashChess:
 
     def send_command(self, command: str):
         if not self.process:
-            raise RuntimeError("ShashChess process is not started")
+            raise RuntimeError("Brainlearn process is not started")
+
+        self._check_process_alive()
 
         self.process.stdin.write(command + "\n")
         self.process.stdin.flush()
@@ -352,9 +373,10 @@ class ShashChess:
 
     def readline(self):
         if not self.process:
-            raise RuntimeError("ShashChess process is not started")
+            raise RuntimeError("Brainlearn process is not started")
 
         while True:
+            self._check_process_alive()
             line = self.process.stdout.readline().strip()
             self.output.append(line)
 

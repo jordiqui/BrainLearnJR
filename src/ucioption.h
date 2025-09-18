@@ -1,6 +1,6 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2024 The Brainlearn developers (see AUTHORS file)
+  Brainlearn, a UCI chess playing engine derived from Brainlearn
+  Copyright (C) 2004-2025 The Brainlearn developers (see AUTHORS file)
 
   Brainlearn is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -43,7 +43,7 @@ class Option {
     Option(OnChange = nullptr);
     Option(bool v, OnChange = nullptr);
     Option(const char* v, OnChange = nullptr);
-    Option(double v, int minv, int maxv, OnChange = nullptr);
+    Option(int v, int minv, int maxv, OnChange = nullptr);
     Option(const char* v, const char* cur, OnChange = nullptr);
 
     Option& operator=(const std::string&);
@@ -54,12 +54,13 @@ class Option {
 
     friend std::ostream& operator<<(std::ostream&, const OptionsMap&);
 
+    int operator<<(const Option&) = delete;
+
    private:
     friend class OptionsMap;
     friend class Engine;
     friend class Tune;
 
-    void operator<<(const Option&);
 
     std::string       defaultValue, currentValue, type;
     int               min, max;
@@ -82,8 +83,9 @@ class OptionsMap {
 
     void setoption(std::istringstream&);
 
-    Option  operator[](const std::string&) const;
-    Option& operator[](const std::string&);
+    const Option& operator[](const std::string&) const;
+
+    void add(const std::string&, const Option& option);
 
     std::size_t count(const std::string&) const;
 

@@ -1,6 +1,6 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2024 The Brainlearn developers (see AUTHORS file)
+  Brainlearn, a UCI chess playing engine derived from Brainlearn
+  Copyright (C) 2004-2025 The Brainlearn developers (see AUTHORS file)
 
   Brainlearn is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
 
 #include "engine.h"
 
+#include <algorithm>
 #include <cassert>
 #include <deque>
 #include <iosfwd>
@@ -32,6 +33,7 @@
 #include "misc.h"
 #include "nnue/network.h"
 #include "nnue/nnue_common.h"
+#include "numa.h"
 #include "perft.h"
 #include "position.h"
 #include "search.h"
@@ -39,20 +41,21 @@
 #include "types.h"
 #include "uci.h"
 #include "ucioption.h"
-#include "win_probability.h"
-#include "learn/learn.h"      //learning
-#include "book/book.h"        //book management
-#include "mcts/montecarlo.h"  //mcts
+#include "wdl/win_probability.h"  //from ShashChess
+#include "learn/learn.h"          //learning
+#include "book/book.h"            //book management
+#include "mcts/montecarlo.h"      //mcts
 namespace Brainlearn {
 
 namespace NN = Eval::NNUE;
 
-constexpr auto StartFEN  = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-constexpr int  MaxHashMB = Is64Bit ? 33554432 : 2048;
+constexpr auto StartFEN   = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+constexpr int  MaxHashMB  = Is64Bit ? 33554432 : 2048;
+int            MaxThreads = std::max(1024, 4 * int(get_hardware_concurrency()));
 
 Engine::Engine(std::optional<std::string> path) :
     binaryDirectory(CommandLine::get_binary_directory(
-      path.value_or(""), CommandLine::get_working_directory())),  //khalid
+      path.value_or(""), CommandLine::get_working_directory())),  //learning
     numaContext(NumaConfig::from_system()),
     states(new std::deque<StateInfo>(1)),
     threads(),
@@ -62,155 +65,201 @@ Engine::Engine(std::optional<std::string> path) :
         NN::NetworkBig({EvalFileDefaultNameBig, "None", ""}, NN::EmbeddedNNUEType::BIG),
         NN::NetworkSmall({EvalFileDefaultNameSmall, "None", ""}, NN::EmbeddedNNUEType::SMALL))) {
     pos.set(StartFEN, false, &states->back());
-    capSq = SQ_NONE;
 
-    options["Debug Log File"] << Option("", [](const Option& o) {
-        start_logger(o);
-        return std::nullopt;
-    });
 
-    options["NumaPolicy"] << Option("auto", [this](const Option& o) {
-        set_numa_config_from_option(o);
-        return numa_config_information_as_string() + "\n"
-             + thread_allocation_information_as_string();
-    });
+    options.add(  //
+      "Debug Log File", Option("", [](const Option& o) {
+          start_logger(o);
+          return std::nullopt;
+      }));
 
-    options["Threads"] << Option(1, 1, 1024, [this](const Option&) {
-        resize_threads();
-        return thread_allocation_information_as_string();
-    });
+    options.add(  //
+      "NumaPolicy", Option("auto", [this](const Option& o) {
+          set_numa_config_from_option(o);
+          return numa_config_information_as_string() + "\n"
+               + thread_allocation_information_as_string();
+      }));
 
-    options["Hash"] << Option(16, 1, MaxHashMB, [this](const Option& o) {
-        set_tt_size(o);
-        return std::nullopt;
-    });
+    options.add(  //
+      "Threads", Option(1, 1, MaxThreads, [this](const Option&) {
+          resize_threads();
+          return thread_allocation_information_as_string();
+      }));
 
-    options["Clear Hash"] << Option([this](const Option&) {
-        search_clear();
-        return std::nullopt;
-    });
-    options["Ponder"] << Option(false);
-    options["MultiPV"] << Option(1, 1, MAX_MOVES);
-    options["Skill Level"] << Option(20, 0, 20);
-    options["Move Overhead"] << Option(10, 0, 5000);
-    options["Minimum Thinking Time"] << Option(100, 0, 5000);  //minimum thining time
-    options["Slow Mover"] << Option(100, 10, 1000);            //slow mover
-    options["nodestime"] << Option(0, 0, 10000);
-    options["UCI_Chess960"] << Option(false);
-    options["UCI_LimitStrength"] << Option(false);
-    options["UCI_Elo"] << Option(Brainlearn::Search::Skill::LowestElo,
-                                 Brainlearn::Search::Skill::LowestElo,
-                                 Brainlearn::Search::Skill::HighestElo);
-    options["UCI_ShowWDL"] << Option(true);  //better Win Probability as the default
-    //Book management begin
+    options.add(  //
+      "Hash", Option(16, 1, MaxHashMB, [this](const Option& o) {
+          set_tt_size(o);
+          return std::nullopt;
+      }));
+
+    options.add(  //
+      "Clear Hash", Option([this](const Option&) {
+          search_clear();
+          return std::nullopt;
+      }));
+
+    options.add(  //
+      "Ponder", Option(false));
+
+    options.add(  //
+      "MultiPV", Option(1, 1, MAX_MOVES));
+
+    options.add("Skill Level", Option(20, 0, 20));
+
+    options.add("Move Overhead", Option(10, 0, 5000));
+
+    options.add("Minimum Thinking Time", Option(100, 0, 5000));
+
+    options.add("Slow Mover", Option(100, 10, 1000));
+
+    options.add("nodestime", Option(0, 0, 10000));
+
+    options.add("UCI_Chess960", Option(false));
+
+    options.add("UCI_LimitStrength", Option(false));
+
+    options.add("UCI_Elo",
+                Option(Brainlearn::Search::Skill::LowestElo, Brainlearn::Search::Skill::LowestElo,
+                       Brainlearn::Search::Skill::HighestElo));
+
+    options.add("UCI_ShowWDL", Option(true));
+
+    // Book management
     for (int i = 0; i < BookManager::NumberOfBooks; ++i)
     {
-        options[Util::format_string("CTG/BIN Book %d File", i + 1)]
-          << Option(EMPTY, [this, i](const Option&) {
-                 init_bookMan(i);
-                 return std::nullopt;
-             });  //book management
-        options[Util::format_string("Book %d Width", i + 1)] << Option(1, 1, 20);
-        options[Util::format_string("Book %d Depth", i + 1)] << Option(255, 1, 255);
-        options[Util::format_string("(CTG) Book %d Only Green", i + 1)] << Option(true);
+        options.add(Util::format_string("CTG/BIN Book %d File", i + 1),
+                    Option(EMPTY, [this, i](const Option&) {
+                        init_bookMan(i);
+                        return std::nullopt;
+                    }));
+
+        options.add(Util::format_string("Book %d Width", i + 1), Option(1, 1, 20));
+
+        options.add(Util::format_string("Book %d Depth", i + 1), Option(255, 1, 255));
+
+        options.add(Util::format_string("(CTG) Book %d Only Green", i + 1), Option(true));
     }
-    //Book management end
-    options["SyzygyPath"] << Option("", [](const Option& o) {
-        Tablebases::init(o);
-        return std::nullopt;
-    });
-    options["SyzygyProbeDepth"] << Option(1, 1, 100);
-    options["Syzygy50MoveRule"] << Option(true);
-    options["SyzygyProbeLimit"] << Option(7, 0, 7);
-    options["EvalFile"] << Option(EvalFileDefaultNameBig, [this](const Option& o) {
-        load_big_network(o);
-        return std::nullopt;
-    });
-    options["EvalFileSmall"] << Option(EvalFileDefaultNameSmall, [this](const Option& o) {
-        load_small_network(o);
-        return std::nullopt;
-    });
-    //From Kelly begin
-    options["Read only learning"] << Option(false, [](const Option& o) {
-        LD.set_readonly(o);
-        return std::nullopt;
-    });
 
-    options["Self Q-learning"] << Option(false, [this](const Option& o) {
-        LD.set_learning_mode(get_options(), (bool) o ? "Self" : "Standard");
-        return std::nullopt;
-    });
-    options["Experience Book"] << Option(false, [this](const Option&) {
-        LD.init(get_options());
-        return std::nullopt;
-    });
-    options["Experience Book Max Moves"] << Option(100, 1, 100);
-    options["Experience Book Min Depth"] << Option(4, 1, 255);
-    //From Kelly end
-    //From MCTS begin
-    options["MCTS"] << Option(false);
-    options["MCTSThreads"] << Option(1, 1, 512);
-    options["MCTS Multi Strategy"] << Option(20, 0, 100);
-    options["MCTS Multi MinVisits"] << Option(5, 0, 1000);
-    //From MCTS end
-    //livebook begin
+    options.add(  //
+      "SyzygyPath", Option("", [](const Option& o) {
+          Tablebases::init(o);
+          return std::nullopt;
+      }));
+
+    options.add("SyzygyProbeDepth", Option(1, 1, 100));
+
+    options.add("Syzygy50MoveRule", Option(true));
+
+    options.add("SyzygyProbeLimit", Option(7, 0, 7));
+
+    options.add(  //
+      "EvalFile", Option(EvalFileDefaultNameBig, [this](const Option& o) {
+          load_big_network(o);
+          return std::nullopt;
+      }));
+
+    options.add(  //
+      "EvalFileSmall", Option(EvalFileDefaultNameSmall, [this](const Option& o) {
+          load_small_network(o);
+          return std::nullopt;
+      }));
+
+    // From learning
+    options.add("Read only learning", Option(false, [](const Option& o) {
+                    LD.set_readonly(o);
+                    return std::nullopt;
+                }));
+
+    options.add("Self Q-learning", Option(false, [this](const Option& o) {
+                    LD.set_learning_mode(get_options(), (bool) o ? "Self" : "Standard");
+                    return std::nullopt;
+                }));
+
+    options.add("Experience Book", Option(false, [this](const Option&) {
+                    LD.init(get_options());
+                    return std::nullopt;
+                }));
+
+    options.add("Experience Book Max Moves", Option(100, 1, 100));
+
+    options.add("Experience Book Min Depth", Option(4, 1, 255));
+
+    // From MCTS
+    options.add("MCTS", Option(false));
+
+    options.add("MCTSThreads", Option(1, 1, 512));
+
+    options.add("MCTS Multi Strategy", Option(20, 0, 100));
+
+    options.add("MCTS Multi MinVisits", Option(5, 0, 1000));
+
+    // LiveBook options
 #ifdef USE_LIVEBOOK
-    options["LiveBook Proxy Url"] << Option("", [](const Option& o) -> std::optional<std::string> {
-        Search::set_proxy_url(o);
-        return std::optional<std::string>{};
-    });
-    options["LiveBook Lichess Games"] << Option(false, [](const Option& o) {
-        Search::set_use_lichess_games(o);
-        return std::nullopt;
-    });
-    options["LiveBook Lichess Masters"] << Option(false, [](const Option& o) {
-        Search::set_use_lichess_masters(o);
-        return std::nullopt;
-    });
-    options["LiveBook Lichess Player"]
-      << Option("", [](const Option& o) -> std::optional<std::string> {
-             Search::set_lichess_player(o);
-             return std::optional<std::string>{};
-         });
-    options["LiveBook Lichess Player Color"]
-      << Option("White var Both var White var Black", "White",
-                [](const Option& o) -> std::optional<std::string> {
-                    std::string str = o;
-                    std::transform(str.begin(), str.end(), str.begin(),
-                                   [](const unsigned char c) { return std::tolower(c); });
-                    Search::set_lichess_player_color(str);
+    options.add("LiveBook Proxy Url", Option("", [](const Option& o) -> std::optional<std::string> {
+                    Search::set_proxy_url(o);
                     return std::optional<std::string>{};
-                });
-    options["LiveBook ChessDB"] << Option(false, [](const Option& o) {
-        Search::set_use_chess_db(o);
-        return std::nullopt;
-    });
-    options["LiveBook Depth"] << Option(255, 1, 255, [](const Option& o) {
-        Search::set_livebook_depth(o);
-        return std::nullopt;
-    });
-    options["ChessDB Tablebase"] << Option(false, [](const Option& o) {
-        Search::set_use_chess_db_tablebase(o);
-        return std::nullopt;
-    });
-    options["Lichess Tablebase"] << Option(false, [](const Option& o) {
-        Search::set_use_lichess_tablebase(o);
-        return std::nullopt;
-    });
-    options["ChessDB Contribute"] << Option(false, [](const Option& o) {
-        Search::set_chess_db_contribute(o);
-        return std::nullopt;
-    });
-#endif
-    //livebook end
+                }));
 
-    options["Variety"] << Option("Off var Off var Standard var Psychological", "Off",
-                                 [](const Option& o) -> std::optional<std::string> {
-                                     Search::set_variety(o);
-                                     return std::optional<std::string>{};
-                                 });  //variety
-    options["Concurrent Experience"]
-      << Option(false);  //for a same experience file on a same folder
+    options.add("LiveBook Lichess Games", Option(false, [](const Option& o) {
+                    Search::set_use_lichess_games(o);
+                    return std::nullopt;
+                }));
+
+    options.add("LiveBook Lichess Masters", Option(false, [](const Option& o) {
+                    Search::set_use_lichess_masters(o);
+                    return std::nullopt;
+                }));
+
+    options.add("LiveBook Lichess Player",
+                Option("", [](const Option& o) -> std::optional<std::string> {
+                    Search::set_lichess_player(o);
+                    return std::optional<std::string>{};
+                }));
+
+    options.add("LiveBook Lichess Player Color",
+                Option("White var Both var White var Black", "White",
+                       [](const Option& o) -> std::optional<std::string> {
+                           std::string str = o;
+                           std::transform(str.begin(), str.end(), str.begin(),
+                                          [](const unsigned char c) { return std::tolower(c); });
+                           Search::set_lichess_player_color(str);
+                           return std::optional<std::string>{};
+                       }));
+
+    options.add("LiveBook ChessDB", Option(false, [](const Option& o) {
+                    Search::set_use_chess_db(o);
+                    return std::nullopt;
+                }));
+
+    options.add("LiveBook Depth", Option(255, 1, 255, [](const Option& o) {
+                    Search::set_livebook_depth(o);
+                    return std::nullopt;
+                }));
+
+    options.add("ChessDB Tablebase", Option(false, [](const Option& o) {
+                    Search::set_use_chess_db_tablebase(o);
+                    return std::nullopt;
+                }));
+
+    options.add("Lichess Tablebase", Option(false, [](const Option& o) {
+                    Search::set_use_lichess_tablebase(o);
+                    return std::nullopt;
+                }));
+
+    options.add("ChessDB Contribute", Option(false, [](const Option& o) {
+                    Search::set_chess_db_contribute(o);
+                    return std::nullopt;
+                }));
+#endif
+
+    options.add("Variety", Option("Off var Off var Standard var Psychological", "Off",
+                                  [](const Option& o) -> std::optional<std::string> {
+                                      Search::set_variety(o);
+                                      return std::optional<std::string>{};
+                                  }));
+
+    options.add("Concurrent Experience", Option(false));
+
     load_networks();
     resize_threads();
 }
@@ -224,7 +273,6 @@ std::uint64_t Engine::perft(const std::string& fen, Depth depth, bool isChess960
 void Engine::go(Search::LimitsType& limits) {
     assert(limits.perft == 0);
     verify_networks();
-    limits.capSq = capSq;
 
     threads.start_thinking(options, pos, states, limits);
 }
@@ -232,13 +280,13 @@ void Engine::stop() { threads.stop = true; }
 
 void Engine::search_clear() {
     wait_for_search_finished();
+
+    MCTS.clear();  //mcts
     tt.clear(threads);
-    MCTS.clear();  // mcts
     threads.clear();
 
     // @TODO wont work with multiple instances
     Tablebases::init(options["SyzygyPath"]);  // Free mapped files
-    WDLModel::init();                         //from learning
 }
 
 void Engine::set_on_update_no_moves(std::function<void(const Engine::InfoShort&)>&& f) {
@@ -268,14 +316,13 @@ void Engine::set_position(const std::string& fen, const std::vector<std::string>
     states = StateListPtr(new std::deque<StateInfo>(1));
     pos.set(fen, options["UCI_Chess960"], &states->back());
 
-    capSq = SQ_NONE;
     for (const auto& move : moves)
     {
         auto m = UCIEngine::to_move(pos, move);
 
         if (m == Move::none())
             break;
-        //Kelly begin
+        //learning begin
         if (LD.is_enabled() && LD.learning_mode() != LearningMode::Self && !LD.is_paused())
         {
             PersistedLearningMove persistedLearningMove;
@@ -287,14 +334,9 @@ void Engine::set_position(const std::string& fen, const std::vector<std::string>
             persistedLearningMove.learningMove.performance = WDLModel::get_win_probability(0, pos);
             LD.add_new_learning(persistedLearningMove.key, persistedLearningMove.learningMove);
         }
-        //Kelly end
+        //learning end
         states->emplace_back();
         pos.do_move(m, states->back());
-
-        capSq          = SQ_NONE;
-        DirtyPiece& dp = states->back().dirtyPiece;
-        if (dp.dirty_num > 1 && dp.to[1] == SQ_NONE)
-            capSq = m.to_sq();
     }
 }
 

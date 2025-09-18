@@ -1,6 +1,6 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2024 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
+  Brainlearn, a UCI chess playing engine derived from Brainlearn
+  Copyright (C) 2004-2025 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
 
   Brainlearn is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -108,12 +108,13 @@ class AutoSpinLock {
 #define LOCK_(m, n, l) LOCK__(m, n, l)
 #define LOCK(m, n) LOCK_(m, n, __LINE__)
 
-MCTSHashTable MCTS;
-Edge          EDGE_NONE;
-Spinlock      createLock;
-size_t        mctsThreads;
-size_t        mctsMultiStrategy;
-double        mctsMultiMinVisits;
+MCTSHashTable       MCTS;
+Edge                EDGE_NONE;
+Spinlock            createLock;
+size_t              mctsThreads;
+size_t              mctsMultiStrategy;
+double              mctsMultiMinVisits;
+std::atomic<size_t> MCTSNodeCount(0);
 
 template<typename T>
 T TRand(const T min, const T max) {
@@ -135,7 +136,10 @@ mctsNodeInfo* get_node(const MonteCarlo* mcts, const Position& p) {
 
     //Lock
     LOCK(mcts, createLock);
-
+    if (MCTSNodeCount.load(std::memory_order_relaxed) >= MCTSMaxNodes)
+    {
+        return nullptr;
+    }
     // If the node already exists in the hash table, we want to return it.
     // We search in the range of all the hash table entries with key "key1".
     const auto [fst, snd] = MCTS.equal_range(key1);
@@ -152,7 +156,8 @@ mctsNodeInfo* get_node(const MonteCarlo* mcts, const Position& p) {
     }
 
     // Node was not found, so we have to create a new one
-    node                 = new mctsNodeInfo();
+    node = new mctsNodeInfo();
+    MCTSNodeCount.fetch_add(1, std::memory_order_relaxed);
     node->key1           = key1;          // Zobrist hash of all pieces, including pawns
     node->key2           = key2;          // Zobrist hash of pawns
     node->node_visits    = 0;             // number of visits by the Monte-Carlo algorithm
@@ -272,18 +277,26 @@ void MonteCarlo::create_root(Search::Worker* worker) {
     lastOutputTime = startTime;
 
     // Prepare the stack to go down and up in the game tree
-    std::memset(stackBuffer, 0, sizeof stackBuffer);
+
+    for (auto& currentStack : stackBuffer)
+    {
+        currentStack = Brainlearn::Search::Stack();
+    }
 
     for (int i = -7; i <= MAX_PLY + 10; i++)
     {
         stack[i].continuationHistory =
           &worker->continuationHistory[0][0][NO_PIECE][0];  // Use as a sentinel
-        stack[i].continuationCorrectionHistory = &worker->continuationCorrectionHistory[NO_PIECE][0];
+        stack[i].continuationCorrectionHistory =
+          &worker->continuationCorrectionHistory[NO_PIECE][0];
+        stack[i].staticEval = VALUE_NONE;
+        stack[i].reduction  = 0;
     }
     for (int i = 0; i <= MAX_PLY + 2; ++i)
-        stack[i].ply = i;
-
-    // TODO : what to do with killers ???
+    {
+        stack[i].ply       = i;
+        stack[i].reduction = 0;
+    }
 
     // Erase the list of nodes, and set the current node to the root node
     std::memset(nodesBuffer, 0, sizeof(nodesBuffer));
@@ -348,6 +361,10 @@ mctsNodeInfo* MonteCarlo::tree_policy(Brainlearn::ThreadPool&        threads,
         do_move(m);
 
         nodes[ply] = get_node(this, pos);
+        if (nodes[ply] == nullptr)
+        {
+            break;
+        }
     }
 
     if (node)
@@ -538,6 +555,10 @@ void MonteCarlo::emit_pv(Search::Worker* worker, Brainlearn::ThreadPool& threads
             rootMoves[index].previousScore = reward_to_value(list[k]->meanActionValue);
             rootMoves[index].score         = rootMoves[index].previousScore;
             rootMoves[index].selDepth      = maximumPly;
+            if (k > 0)
+            {
+                rootMoves[index].score = rootMoves[index].previousScore - k * 10;
+            }
         }
 
         // Extract from the tree the principal variation of the best move
@@ -548,7 +569,10 @@ void MonteCarlo::emit_pv(Search::Worker* worker, Brainlearn::ThreadPool& threads
             cnt++;
             do_move(move);
             mctsNodeInfo* node = nodes[ply] = get_node(this, pos);
-
+            if (node == nullptr)
+            {
+                break;
+            }
             LOCK(this, node);
 
             if (ply > maximumPly)
@@ -626,7 +650,6 @@ inline bool MonteCarlo::is_terminal(mctsNodeInfo* node) const {
 void MonteCarlo::do_move(const Move m) {
 
     assert(ply < MAX_PLY);
-
     stack[ply].ply         = ply;
     stack[ply].currentMove = m;
     stack[ply].inCheck     = pos.checkers();
@@ -634,10 +657,10 @@ void MonteCarlo::do_move(const Move m) {
 
     stack[ply].continuationHistory =
       &thisThread->continuationHistory[stack[ply].inCheck][capture][pos.moved_piece(m)][m.to_sq()];
-	stack[ply].continuationCorrectionHistory =
-	  &thisThread->continuationCorrectionHistory[pos.moved_piece(m)][m.to_sq()];
+    stack[ply].continuationCorrectionHistory =
+      &thisThread->continuationCorrectionHistory[pos.moved_piece(m)][m.to_sq()];
 
-    pos.do_move(m, states[ply]);
+    pos.do_move(m, states[ply], &tt);
 
     ply++;
     if (ply > maximumPly)
@@ -670,13 +693,17 @@ void MonteCarlo::generate_moves(mctsNodeInfo* node) {
     auto [ttHit, ttData, ttWriter] = tt.probe(pos.key());
     Depth depth                    = 30;
 
-    const PieceToHistory* contHist[] = {stack[ply - 1].continuationHistory,
-                                        stack[ply - 2].continuationHistory,
-                                        stack[ply - 3].continuationHistory,
-                                        stack[ply - 4].continuationHistory,
-                                        nullptr,
-                                        stack[ply - 6].continuationHistory};
-    MovePicker mp(pos, ttData.move, depth, &thisThread->mainHistory, &thisThread->lowPlyHistory,
+    const PieceToHistory* contHist[] = {
+      stack[ply - 1].continuationHistory, stack[ply - 2].continuationHistory,
+      stack[ply - 3].continuationHistory, stack[ply - 4].continuationHistory,
+      stack[ply - 5].continuationHistory, stack[ply - 6].continuationHistory};
+    Move ttMove = Move::none();
+    if (ttHit && ttData.move && pos.pseudo_legal(ttData.move) && pos.legal(ttData.move))
+    {
+        ttMove = ttData.move;
+    }
+    MovePicker mp(pos, ttMove, depth, &thisThread->mainHistory, &thisThread->lowPlyHistory,
+
                   &thisThread->captureHistory, contHist, &thisThread->pawnHistory, stack[ply].ply);
     Move       move;
     int        moveCount = 0;
@@ -687,7 +714,7 @@ void MonteCarlo::generate_moves(mctsNodeInfo* node) {
         if (pos.legal(move))
         {
             stack[ply].moveCount = ++moveCount;
-            const Reward prior   = calculate_prior(move);
+            Reward prior         = calculate_prior(move);
             if (prior > bestPrior)
             {
                 node->ttValue = reward_to_value(prior);
@@ -853,8 +880,8 @@ double MonteCarlo::ucb(const Edge* edge, long fatherVisits, bool priorMode) cons
 void MonteCarlo::default_parameters() {
 
     BACKUP_MINIMAX           = 1.0;
-    PRIOR_FAST_EVAL_DEPTH    = 1;
-    PRIOR_SLOW_EVAL_DEPTH    = 1;
+    PRIOR_FAST_EVAL_DEPTH    = 2;
+    PRIOR_SLOW_EVAL_DEPTH    = 3;
     UCB_UNEXPANDED_NODE      = 1.0;
     UCB_EXPLORATION_CONSTANT = 1.0;
     UCB_LOSSES_AVOIDANCE     = 1.0;
@@ -886,12 +913,4 @@ void MonteCarlo::print_children() {
 
     lastOutputTime = now();
 }
-
-// List of FIXME/TODO for the monte-carlo branch
-//
-// 1. ttMove = Move::none() in generate_moves() ?
-// 2. what to do with killers in create_root(Search::Worker* worker) ?
-// 3. why do we get losses on time with small prior depths ?
-// 4. should we set rm.score to -VALUE_INFINITE for moves >= 2 in emit_principal_variation() ?
-// 5. r2qk2r/1p1b1pb1/4p2p/1p1p4/1n1P4/NQ3PP1/PP2N2P/R1B2RK1 b kq - 23 12
 }

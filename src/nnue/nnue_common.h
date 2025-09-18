@@ -1,6 +1,6 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2024 The Brainlearn developers (see AUTHORS file)
+  Brainlearn, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2025 The Brainlearn developers (see AUTHORS file)
 
   Brainlearn is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -48,6 +48,11 @@
 
 namespace Brainlearn::Eval::NNUE {
 
+using BiasType       = std::int16_t;
+using WeightType     = std::int16_t;
+using PSQTWeightType = std::int32_t;
+using IndexType      = std::uint32_t;
+
 // Version of the evaluation file
 constexpr std::uint32_t Version = 0x7AF32F20u;
 
@@ -76,7 +81,6 @@ constexpr std::size_t MaxSimdWidth = 32;
 
 // Type of input feature after conversion
 using TransformedFeatureType = std::uint8_t;
-using IndexType              = std::uint32_t;
 
 // Round n up to be a multiple of base
 template<typename IntType>

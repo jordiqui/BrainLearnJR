@@ -9,9 +9,9 @@ message: >-
 type: software
 authors:
   - name: The Brainlearn developers (see AUTHORS file)
-repository-code: 'https://github.com/official-brainlearn/Brainlearn'
-url: 'https://brainlearnchess.org/'
-repository-artifact: 'https://brainlearnchess.org/download/'
+repository-code: 'https://github.com/amchess/Brainlearn'
+url: 'https://github.com/amchess/Brainlearn'
+repository-artifact: 'https://github.com/amchess/Brainlearn/tags'
 abstract: Brainlearn is a free and strong UCI chess engine.
 keywords:
   - chess

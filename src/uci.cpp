@@ -1,6 +1,6 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2024 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
+  Brainlearn, a UCI chess playing engine derived from Brainlearn
+  Copyright (C) 2004-2025 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
 
   Brainlearn is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -113,10 +113,10 @@ void UCIEngine::loop() {
         is >> std::skipws >> token;
 
         if (token == "quit" || token == "stop")
-        {  //Khalid
+        {  //learning
             engine.stop();
 
-            //Kelly begin
+            //learning begin
             if (token == "quit" && LD.is_enabled() && !LD.is_paused())
             {
                 //Wait for the current search operation (if any) to stop
@@ -134,7 +134,7 @@ void UCIEngine::loop() {
                     LD.persist(engine.get_options());
                 }
             }
-            //Kelly end
+            //learning end
         }
         // The GUI sends 'ponderhit' to tell that the user has played the expected move.
         // So, 'ponderhit' is sent if pondering was done on the same move that the user
@@ -166,7 +166,7 @@ void UCIEngine::loop() {
             pos.set(engine.fen(), engine.get_options()["UCI_Chess960"], &states->back());
         }  //Experience Book
         else if (token == "ucinewgame")
-        //Kelly and Khalid begin
+        //learning begin
         {
             if (LD.is_enabled())
             {
@@ -185,7 +185,7 @@ void UCIEngine::loop() {
             }
             engine.search_clear();
         }
-        //Kelly and Khalid end
+        //learning end
         else if (token == "isready")
             sync_cout << "readyok" << sync_endl;
 
@@ -229,7 +229,7 @@ void UCIEngine::loop() {
                  "\nIt is released as free software licensed under the GNU GPLv3 License."
                  "\nBrainlearn is normally used with a graphical user interface (GUI) and implements"
                  "\nthe Universal Chess Interface (UCI) protocol to communicate with a GUI, an API, etc."
-                 "\nFor any further information, visit https://github.com/official-stockfish/Stockfish#readme"
+                 "\nFor any further information, visit https://github.com/official-brainlearn/Brainlearn#readme"
                  "\nor read the corresponding README.md and Copying.txt files distributed along with this program.\n"
               << sync_endl;
         else if (!token.empty() && token[0] != '#')
@@ -339,7 +339,7 @@ void UCIEngine::bench(std::istream& args) {
             position(is);
         else if (token == "ucinewgame")
         {
-            //Kelly begin
+            //learning begin
             if (LD.is_enabled())
             {
                 if (LD.learning_mode() == LearningMode::Self && !LD.is_paused())
@@ -348,7 +348,7 @@ void UCIEngine::bench(std::istream& args) {
                 }
                 setStartPoint();
             }
-            //Kelly end
+            //learning end
             engine.search_clear();  // search_clear may take a while
             elapsed = now();
         }
@@ -568,55 +568,6 @@ void UCIEngine::position(std::istringstream& is) {
     engine.set_position(fen, moves);
 }
 
-namespace {
-
-struct WinRateParams {
-    double a;
-    double b;
-};
-//for Shashin theory and learning begin
-WinRateParams win_rate_params(int materialClamp) {
-    double m = materialClamp / 58.0;
-    // Return a = p_a(material) and b = p_b(material), see github.com/official-stockfish/WDL_model
-    constexpr double as[] = {-37.45051876, 121.19101539, -132.78783573, 420.70576692};
-    constexpr double bs[] = {90.26261072, -137.26549898, 71.10130540, 51.35259597};
-
-    double a = (((as[0] * m + as[1]) * m + as[2]) * m) + as[3];
-    double b = (((bs[0] * m + bs[1]) * m + bs[2]) * m) + bs[3];
-
-    return {a, b};
-}
-//for Shashin theory and learning end
-
-WinRateParams win_rate_params(const Position& pos) {
-
-    int material = pos.count<PAWN>() + 3 * pos.count<KNIGHT>() + 3 * pos.count<BISHOP>()
-                 + 5 * pos.count<ROOK>() + 9 * pos.count<QUEEN>();
-
-    // The fitted model only uses data for material counts in [17, 78], and is anchored at count 58.
-    double m = std::clamp(material, 17, 78) / 58.0;
-
-    // Return a = p_a(material) and b = p_b(material), see github.com/official-stockfish/WDL_model
-    constexpr double as[] = {-37.45051876, 121.19101539, -132.78783573, 420.70576692};
-    constexpr double bs[] = {90.26261072, -137.26549898, 71.10130540, 51.35259597};
-
-    double a = (((as[0] * m + as[1]) * m + as[2]) * m) + as[3];
-    double b = (((bs[0] * m + bs[1]) * m + bs[2]) * m) + bs[3];
-
-    return {a, b};
-}
-
-// The win rate model is 1 / (1 + exp((a - eval) / b)), where a = p_a(material) and b = p_b(material).
-// It fits the LTC fishtest statistics rather accurately.
-int win_rate_model(Value v, const Position& pos) {
-
-    auto [a, b] = win_rate_params(pos);
-
-    // Return the win rate in per mille units, rounded to the nearest integer.
-    return int(0.5 + 1000 / (1 + std::exp((a - double(v)) / b)));
-}
-}
-
 std::string UCIEngine::format_score(const Score& s) {
     constexpr int TB_CP = 20000;
     const auto    format =
@@ -634,12 +585,12 @@ std::string UCIEngine::format_score(const Score& s) {
 
     return s.visit(format);
 }
-//from Khalid begin
+//from learning begin
 int UCIEngine::getNormalizeToPawnValue(Position& pos) {
-    auto [a, b] = win_rate_params(pos);
+    auto [a, b] = WDLModel::win_rate_params(pos);
     return a;
 }
-//from Khalid end
+//from learning end
 
 // Turns a Value to an integer centipawn number,
 // without treatment of mate and similar special scores.
@@ -649,30 +600,12 @@ int UCIEngine::to_cp(Value v, const Position& pos) {
     // (log(1/L - 1) - log(1/W - 1)) / (log(1/L - 1) + log(1/W - 1)).
     // Based on our win_rate_model, this simply yields v / a.
 
-    auto [a, b] = win_rate_params(pos);
+    auto [a, b] = WDLModel::win_rate_params(pos);
 
     return std::round(100 * int(v) / a);
 }
 
-std::string UCIEngine::wdl(Value v, const Position& pos) {
-    std::stringstream ss;
-
-    int wdl_w = win_rate_model(v, pos);
-    int wdl_l = win_rate_model(-v, pos);
-    int wdl_d = 1000 - wdl_w - wdl_l;
-    ss << wdl_w << " " << wdl_d << " " << wdl_l;
-
-    return ss.str();
-}
-//for Shashin theory and learning begin
-uint8_t UCIEngine::getWinProbability(int valueClamp, int materialClamp) {
-    auto [a, b]  = win_rate_params(materialClamp);
-    double wdl_w = 0.5 + 1000 / (1 + std::exp((a - double(valueClamp)) / b));
-    double wdl_l = 0.5 + 1000 / (1 + std::exp((a - double(-valueClamp)) / b));
-    double wdl_d = 1000 - wdl_w - wdl_l;
-    return static_cast<uint8_t>(round((wdl_w + wdl_d / 2.0) / 10.0));
-}
-//for Shashin theory and learning end
+//in wdl package for wdl model
 std::string UCIEngine::square(Square s) {
     return std::string{char('a' + file_of(s)), char('1' + rank_of(s))};
 }
@@ -728,11 +661,11 @@ void UCIEngine::on_update_full(const Engine::InfoFull& info, bool showWDL) {
        << " multipv " << info.multiPV             //
        << " score " << format_score(info.score);  //
 
-    if (showWDL)
-        ss << " wdl " << info.wdl;
-
     if (!info.bound.empty())
         ss << " " << info.bound;
+
+    if (showWDL)
+        ss << " wdl " << info.wdl;
 
     ss << " nodes " << info.nodes        //
        << " nps " << info.nps            //

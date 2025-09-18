@@ -1,6 +1,6 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2024 The Brainlearn developers (see AUTHORS file)
+  Brainlearn, a UCI chess playing engine derived from Brainlearn
+  Copyright (C) 2004-2025 The Brainlearn developers (see AUTHORS file)
 
   Brainlearn is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -94,7 +94,7 @@ const std::vector<std::string> Defaults = {
 
 // clang-format off
 // human-randomly picked 5 games with <60 moves from
-// https://tests.stockfish.org/tests/view/665c71f9fd45fb0f907c21e0
+// https://tests.brainlearnchess.org/tests/view/665c71f9fd45fb0f907c21e0
 // only moves for one side
 const std::vector<std::vector<std::string>> BenchmarkPositions = {
     {

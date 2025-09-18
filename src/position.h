@@ -1,6 +1,6 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2024 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
+  Brainlearn, a UCI chess playing engine derived from Brainlearn
+  Copyright (C) 2004-2025 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
 
   Brainlearn is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -26,14 +26,13 @@
 #include <string>
 
 #include "bitboard.h"
-#include "nnue/nnue_accumulator.h"
-#include "nnue/nnue_architecture.h"
 #include "types.h"
+#include "movegen.h"  //shashin
 
 namespace Brainlearn {
-//Kelly begin
+//learning begin
 extern void setStartPoint();
-//Kelly end
+//learning end
 class TranspositionTable;
 
 // StateInfo struct stores information needed to restore a Position object to
@@ -45,7 +44,6 @@ struct StateInfo {
     // Copied when making a move
     Key    materialKey;
     Key    pawnKey;
-    Key    majorPieceKey;
     Key    minorPieceKey;
     Key    nonPawnKey[COLOR_NB];
     Value  nonPawnMaterial[COLOR_NB];
@@ -58,17 +56,11 @@ struct StateInfo {
     Key        key;
     Bitboard   checkersBB;
     StateInfo* previous;
-    StateInfo* next;
     Bitboard   blockersForKing[COLOR_NB];
     Bitboard   pinners[COLOR_NB];
     Bitboard   checkSquares[PIECE_TYPE_NB];
     Piece      capturedPiece;
     int        repetition;
-
-    // Used by NNUE
-    Eval::NNUE::Accumulator<Eval::NNUE::TransformedFeatureDimensionsBig>   accumulatorBig;
-    Eval::NNUE::Accumulator<Eval::NNUE::TransformedFeatureDimensionsSmall> accumulatorSmall;
-    DirtyPiece                                                             dirtyPiece;
 };
 
 
@@ -97,9 +89,9 @@ class Position {
     std::string fen() const;
 
     // Position representation
-    Bitboard pieces(PieceType pt = ALL_PIECES) const;
+    Bitboard pieces() const;  // All pieces
     template<typename... PieceTypes>
-    Bitboard pieces(PieceType pt, PieceTypes... pts) const;
+    Bitboard pieces(PieceTypes... pts) const;
     Bitboard pieces(Color c) const;
     template<typename... PieceTypes>
     Bitboard pieces(Color c, PieceTypes... pts) const;
@@ -114,10 +106,9 @@ class Position {
     Square square(Color c) const;
 
     // Castling
-    CastlingRights castling_rights(Color c) const;
-    bool           can_castle(CastlingRights cr) const;
-    bool           castling_impeded(CastlingRights cr) const;
-    Square         castling_rook_square(CastlingRights cr) const;
+    bool   can_castle(CastlingRights cr) const;
+    bool   castling_impeded(CastlingRights cr) const;
+    Square castling_rook_square(CastlingRights cr) const;
 
     // Checking
     Bitboard checkers() const;
@@ -128,6 +119,7 @@ class Position {
     // Attacks to/from a given square
     Bitboard attackers_to(Square s) const;
     Bitboard attackers_to(Square s, Bitboard occupied) const;
+    bool     attackers_to_exist(Square s, Bitboard occupied, Color c) const;
     void     update_slider_blockers(Color c) const;
     template<PieceType Pt>
     Bitboard attacks_by(Color c) const;
@@ -142,21 +134,19 @@ class Position {
     Piece captured_piece() const;
 
     // Doing and undoing moves
-    void do_move(Move m, StateInfo& newSt);
-    void do_move(Move m, StateInfo& newSt, bool givesCheck);
-    void undo_move(Move m);
-    void do_null_move(StateInfo& newSt, TranspositionTable& tt);
-    void undo_null_move();
+    void       do_move(Move m, StateInfo& newSt, const TranspositionTable* tt);
+    DirtyPiece do_move(Move m, StateInfo& newSt, bool givesCheck, const TranspositionTable* tt);
+    void       undo_move(Move m);
+    void       do_null_move(StateInfo& newSt, const TranspositionTable& tt);
+    void       undo_null_move();
 
     // Static Exchange Evaluation
     bool see_ge(Move m, int threshold = 0) const;
 
     // Accessing hash keys
     Key key() const;
-    Key key_after(Move m) const;
     Key material_key() const;
     Key pawn_key() const;
-    Key major_piece_key() const;
     Key minor_piece_key() const;
     Key non_pawn_key(Color c) const;
 
@@ -165,6 +155,7 @@ class Position {
     int   game_ply() const;
     bool  is_chess960() const;
     bool  is_draw(int ply) const;
+    bool  is_repetition(int ply) const;
     bool  upcoming_repetition(int ply) const;
     bool  has_repeated() const;
     int   rule50_count() const;
@@ -175,7 +166,6 @@ class Position {
     bool pos_is_ok() const;
     void flip();
 
-    // Used by NNUE
     StateInfo* state() const;
 
     void put_piece(Piece pc, Square s);
@@ -190,9 +180,13 @@ class Position {
     // Other helpers
     void move_piece(Square from, Square to);
     template<bool Do>
-    void do_castling(Color us, Square from, Square& to, Square& rfrom, Square& rto);
-    template<bool AfterMove>
-    Key adjust_key50(Key k) const;
+    void do_castling(Color             us,
+                     Square            from,
+                     Square&           to,
+                     Square&           rfrom,
+                     Square&           rto,
+                     DirtyPiece* const dp = nullptr);
+    Key  adjust_key50(Key k) const;
 
     // Data members
     Piece      board[SQUARE_NB];
@@ -207,7 +201,7 @@ class Position {
     Color      sideToMove;
     bool       chess960;
 };
-extern void   putQLearningTrajectoryIntoLearningTable();  //kelly
+extern void   putQLearningTrajectoryIntoLearningTable();  //learning
 std::ostream& operator<<(std::ostream& os, const Position& pos);
 
 inline Color Position::side_to_move() const { return sideToMove; }
@@ -221,11 +215,11 @@ inline bool Position::empty(Square s) const { return piece_on(s) == NO_PIECE; }
 
 inline Piece Position::moved_piece(Move m) const { return piece_on(m.from_sq()); }
 
-inline Bitboard Position::pieces(PieceType pt) const { return byTypeBB[pt]; }
+inline Bitboard Position::pieces() const { return byTypeBB[ALL_PIECES]; }
 
 template<typename... PieceTypes>
-inline Bitboard Position::pieces(PieceType pt, PieceTypes... pts) const {
-    return pieces(pt) | pieces(pts...);
+inline Bitboard Position::pieces(PieceTypes... pts) const {
+    return (byTypeBB[pts] | ...);
 }
 
 inline Bitboard Position::pieces(Color c) const { return byColorBB[c]; }
@@ -254,10 +248,6 @@ inline Square Position::square(Color c) const {
 inline Square Position::ep_square() const { return st->epSquare; }
 
 inline bool Position::can_castle(CastlingRights cr) const { return st->castlingRights & cr; }
-
-inline CastlingRights Position::castling_rights(Color c) const {
-    return c & CastlingRights(st->castlingRights);
-}
 
 inline bool Position::castling_impeded(CastlingRights cr) const {
     assert(cr == WHITE_OO || cr == WHITE_OOO || cr == BLACK_OO || cr == BLACK_OOO);
@@ -295,18 +285,15 @@ inline Bitboard Position::pinners(Color c) const { return st->pinners[c]; }
 
 inline Bitboard Position::check_squares(PieceType pt) const { return st->checkSquares[pt]; }
 
-inline Key Position::key() const { return adjust_key50<false>(st->key); }
+inline Key Position::key() const { return adjust_key50(st->key); }
 
-template<bool AfterMove>
 inline Key Position::adjust_key50(Key k) const {
-    return st->rule50 < 14 - AfterMove ? k : k ^ make_key((st->rule50 - (14 - AfterMove)) / 8);
+    return st->rule50 < 14 ? k : k ^ make_key((st->rule50 - 14) / 8);
 }
 
 inline Key Position::pawn_key() const { return st->pawnKey; }
 
 inline Key Position::material_key() const { return st->materialKey; }
-
-inline Key Position::major_piece_key() const { return st->majorPieceKey; }
 
 inline Key Position::minor_piece_key() const { return st->minorPieceKey; }
 
@@ -370,7 +357,9 @@ inline void Position::move_piece(Square from, Square to) {
     board[to]   = pc;
 }
 
-inline void Position::do_move(Move m, StateInfo& newSt) { do_move(m, newSt, gives_check(m)); }
+inline void Position::do_move(Move m, StateInfo& newSt, const TranspositionTable* tt = nullptr) {
+    do_move(m, newSt, gives_check(m), tt);
+}
 
 inline StateInfo* Position::state() const { return st; }
 

@@ -1,6 +1,6 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2024 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
+  Brainlearn, a UCI chess playing engine derived from Brainlearn
+  Copyright (C) 2004-2025 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
 
   Brainlearn is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -18,7 +18,9 @@
 
 #include "misc.h"
 
+#include <array>
 #include <atomic>
+#include <cassert>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -29,7 +31,7 @@
 #include <limits>
 #include <mutex>
 #include <sstream>
-#include <string_view>
+//not used string_view: improved from Brainlearn
 //from Brainlearn begin
 #include <algorithm>
 #include <stdarg.h>
@@ -42,7 +44,7 @@ namespace Brainlearn {
 namespace {
 
 // Version number or dev.
-constexpr std::string_view version = "30";
+constexpr std::string_view version = "31";
 
 // Our fancy logging facility. The trick here is to replace cin.rdbuf() and
 // cout.rdbuf() with two Tie objects that tie cin and cout to a file stream. We
@@ -160,7 +162,7 @@ std::string engine_version_info() {
 
 std::string engine_info(bool to_uci) {
     return engine_version_info() + (to_uci ? "\nid author " : " by ")
-         + "A. Manzo, F. Ferraguti, K. Kiniama and Stockfish developers (see AUTHORS file)";
+         + "A. Manzo, F. Ferraguti, K. Kiniama and the Brainlearn developers (see AUTHORS file)";
 }
 
 
@@ -239,6 +241,9 @@ std::string compiler_info() {
 
     compiler += "\nCompilation settings       : ";
     compiler += (Is64Bit ? "64bit" : "32bit");
+#if defined(USE_AVX512ICL)
+    compiler += " AVX512ICL";
+#endif
 #if defined(USE_VNNI)
     compiler += " VNNI";
 #endif
@@ -289,9 +294,18 @@ namespace {
 
 template<size_t N>
 struct DebugInfo {
-    std::atomic<int64_t> data[N] = {0};
+    std::array<std::atomic<int64_t>, N> data = {0};
 
-    constexpr std::atomic<int64_t>& operator[](int index) { return data[index]; }
+    [[nodiscard]] constexpr std::atomic<int64_t>& operator[](size_t index) {
+        assert(index < N);
+        return data[index];
+    }
+
+    constexpr DebugInfo& operator=(const DebugInfo& other) {
+        for (size_t i = 0; i < N; i++)
+            data[i].store(other.data[i].load());
+        return *this;
+    }
 };
 
 struct DebugExtremes: public DebugInfo<3> {
@@ -301,54 +315,54 @@ struct DebugExtremes: public DebugInfo<3> {
     }
 };
 
-DebugInfo<2>  hit[MaxDebugSlots];
-DebugInfo<2>  mean[MaxDebugSlots];
-DebugInfo<3>  stdev[MaxDebugSlots];
-DebugInfo<6>  correl[MaxDebugSlots];
-DebugExtremes extremes[MaxDebugSlots];
+std::array<DebugInfo<2>, MaxDebugSlots>  hit;
+std::array<DebugInfo<2>, MaxDebugSlots>  mean;
+std::array<DebugInfo<3>, MaxDebugSlots>  stdev;
+std::array<DebugInfo<6>, MaxDebugSlots>  correl;
+std::array<DebugExtremes, MaxDebugSlots> extremes;
 
 }  // namespace
 
 void dbg_hit_on(bool cond, int slot) {
 
-    ++hit[slot][0];
+    ++hit.at(slot)[0];
     if (cond)
-        ++hit[slot][1];
+        ++hit.at(slot)[1];
 }
 
 void dbg_mean_of(int64_t value, int slot) {
 
-    ++mean[slot][0];
-    mean[slot][1] += value;
+    ++mean.at(slot)[0];
+    mean.at(slot)[1] += value;
 }
 
 void dbg_stdev_of(int64_t value, int slot) {
 
-    ++stdev[slot][0];
-    stdev[slot][1] += value;
-    stdev[slot][2] += value * value;
+    ++stdev.at(slot)[0];
+    stdev.at(slot)[1] += value;
+    stdev.at(slot)[2] += value * value;
 }
 
 void dbg_extremes_of(int64_t value, int slot) {
-    ++extremes[slot][0];
+    ++extremes.at(slot)[0];
 
-    int64_t current_max = extremes[slot][1].load();
-    while (current_max < value && !extremes[slot][1].compare_exchange_weak(current_max, value))
+    int64_t current_max = extremes.at(slot)[1].load();
+    while (current_max < value && !extremes.at(slot)[1].compare_exchange_weak(current_max, value))
     {}
 
-    int64_t current_min = extremes[slot][2].load();
-    while (current_min > value && !extremes[slot][2].compare_exchange_weak(current_min, value))
+    int64_t current_min = extremes.at(slot)[2].load();
+    while (current_min > value && !extremes.at(slot)[2].compare_exchange_weak(current_min, value))
     {}
 }
 
 void dbg_correl_of(int64_t value1, int64_t value2, int slot) {
 
-    ++correl[slot][0];
-    correl[slot][1] += value1;
-    correl[slot][2] += value1 * value1;
-    correl[slot][3] += value2;
-    correl[slot][4] += value2 * value2;
-    correl[slot][5] += value1 * value2;
+    ++correl.at(slot)[0];
+    correl.at(slot)[1] += value1;
+    correl.at(slot)[2] += value1 * value1;
+    correl.at(slot)[3] += value2;
+    correl.at(slot)[4] += value2 * value2;
+    correl.at(slot)[5] += value1 * value2;
 }
 
 void dbg_print() {
@@ -392,6 +406,13 @@ void dbg_print() {
         }
 }
 
+void dbg_clear() {
+    hit.fill({});
+    mean.fill({});
+    stdev.fill({});
+    correl.fill({});
+    extremes.fill({});
+}
 
 // Used to serialize access to std::cout
 // to avoid multiple threads writing at the same time.
@@ -462,18 +483,19 @@ bool is_whitespace(std::string_view s) {
     return std::all_of(s.begin(), s.end(), [](char c) { return std::isspace(c); });
 }
 
-//from Khalid begin
+//from learning begin
 CommandLine::CommandLine(int _argc, char** _argv) :
     argc(_argc),
     argv(_argv) {
     workingDirectory = CommandLine::get_working_directory();
     binaryDirectory  = CommandLine::get_binary_directory(argv[0], workingDirectory);
     Util::init(this);
-    //from Khalid end
+    //from learning end
 }
 
 std::string CommandLine::get_binary_directory(std::string argv0, std::string workingDirectory) {
     std::string pathSeparator;
+
 #ifdef _WIN32
     pathSeparator = "\\";
     #ifdef _MSC_VER
@@ -486,7 +508,7 @@ std::string CommandLine::get_binary_directory(std::string argv0, std::string wor
 #else
     pathSeparator = "/";
 #endif
-    //from Khalid end
+    //from learning end
     // Extract the binary directory path from argv0
     auto   binaryDirectory = argv0;
     size_t pos             = binaryDirectory.find_last_of("\\/");
@@ -496,13 +518,13 @@ std::string CommandLine::get_binary_directory(std::string argv0, std::string wor
         binaryDirectory.resize(pos + 1);
 
     // Pattern replacement: "./" at the start of path is replaced by the working directory
-    //from Khalid begin
+    //from learning begin
     if (binaryDirectory.find("." + pathSeparator) == 0)
     {
         binaryDirectory.replace(0, 1, workingDirectory);
     }
     binaryDirectory = Util::fix_path(binaryDirectory);
-    //from Khalid end
+    //from learning end
     return binaryDirectory;
 }
 
@@ -510,13 +532,13 @@ std::string CommandLine::get_working_directory() {
     std::string workingDirectory = "";
     char        buff[40000];
     char*       cwd = GETCWD(buff, 40000);
-    //from Khalid begin
+    //from learning begin
     if (cwd)
     {
         workingDirectory = cwd;
     }
-    workingDirectory = Util::fix_path(workingDirectory);  //khalid
-    //from Khalid end
+    workingDirectory = Util::fix_path(workingDirectory);  //learning
+    //from learning end
     return workingDirectory;
 }
 

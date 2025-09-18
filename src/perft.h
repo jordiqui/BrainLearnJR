@@ -1,6 +1,6 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2024 The Brainlearn developers (see AUTHORS file)
+  Brainlearn, a UCI chess playing engine derived from Brainlearn
+  Copyright (C) 2004-2025 The Brainlearn developers (see AUTHORS file)
 
   Brainlearn is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -34,7 +34,6 @@ template<bool Root>
 uint64_t perft(Position& pos, Depth depth) {
 
     StateInfo st;
-    ASSERT_ALIGNED(&st, Eval::NNUE::CacheLineSize);
 
     uint64_t   cnt, nodes = 0;
     const bool leaf = (depth == 2);
@@ -57,9 +56,9 @@ uint64_t perft(Position& pos, Depth depth) {
 }
 
 inline uint64_t perft(const std::string& fen, Depth depth, bool isChess960) {
-    StateListPtr states(new std::deque<StateInfo>(1));
-    Position     p;
-    p.set(fen, isChess960, &states->back());
+    StateInfo st;
+    Position  p;
+    p.set(fen, isChess960, &st);
 
     return perft<true>(p, depth);
 }

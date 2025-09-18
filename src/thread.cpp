@@ -1,6 +1,6 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2024 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
+  Brainlearn, a UCI chess playing engine derived from Brainlearn
+  Copyright (C) 2004-2025 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
 
   Brainlearn is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -154,7 +154,7 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
     if (requested > 0)  // create new thread(s)
     {
         // Binding threads may be problematic when there's multiple NUMA nodes and
-        // multiple Stockfish instances running. In particular, if each instance
+        // multiple Brainlearn instances running. In particular, if each instance
         // runs a single thread then they would all be mapped to the first NUMA node.
         // This is undesirable, and so the default behaviour (i.e. when the user does not
         // change the NumaConfig UCI setting) is to not bind the threads to processors
@@ -180,7 +180,7 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
             const size_t    threadId = threads.size();
             const NumaIndex numaId   = doBindThreads ? boundThreadToNumaNode[threadId] : 0;
             auto            manager  = threadId == 0 ? std::unique_ptr<Search::ISearchManager>(
-                             std::make_unique<Search::SearchManager>(updateContext))
+                                             std::make_unique<Search::SearchManager>(updateContext))
                                                      : std::make_unique<Search::NullSearchManager>();
 
             // When not binding threads we want to force all access to happen
@@ -329,13 +329,13 @@ Thread* ThreadPool::get_best_thread() const {
         const auto bestThreadMoveVote = votes[bestThreadPV[0]];
         const auto newThreadMoveVote  = votes[newThreadPV[0]];
 
-        const bool bestThreadInProvenWin = bestThreadScore >= VALUE_TB_WIN_IN_MAX_PLY;
-        const bool newThreadInProvenWin  = newThreadScore >= VALUE_TB_WIN_IN_MAX_PLY;
+        const bool bestThreadInProvenWin = is_win(bestThreadScore);
+        const bool newThreadInProvenWin  = is_win(newThreadScore);
 
         const bool bestThreadInProvenLoss =
-          bestThreadScore != -VALUE_INFINITE && bestThreadScore <= VALUE_TB_LOSS_IN_MAX_PLY;
+          bestThreadScore != -VALUE_INFINITE && is_loss(bestThreadScore);
         const bool newThreadInProvenLoss =
-          newThreadScore != -VALUE_INFINITE && newThreadScore <= VALUE_TB_LOSS_IN_MAX_PLY;
+          newThreadScore != -VALUE_INFINITE && is_loss(newThreadScore);
 
         // We make sure not to pick a thread with truncated principal variation
         const bool betterVotingValue =
@@ -355,7 +355,7 @@ Thread* ThreadPool::get_best_thread() const {
                 bestThread = th.get();
         }
         else if (newThreadInProvenWin || newThreadInProvenLoss
-                 || (newThreadScore > VALUE_TB_LOSS_IN_MAX_PLY
+                 || (!is_loss(newThreadScore)
                      && (newThreadMoveVote > bestThreadMoveVote
                          || (newThreadMoveVote == bestThreadMoveVote && betterVotingValue))))
             bestThread = th.get();

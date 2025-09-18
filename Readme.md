@@ -1,12 +1,12 @@
 <div align="center">
 
-  [![Stockfish][stockfish128-logo]][website-link]
+  [![Brainlearn][brainlearn128-logo]][website-link]
 
-  <h3>Stockfish</h3>
+  <h3>Brainlearn</h3>
 
   A free and strong UCI chess engine.
   <br>
-  <strong>[Explore Stockfish docs �][wiki-link]</strong>
+  <strong>[Explore Brainlearn docs �][wiki-link]</strong>
   <br>
   <br>
   [Report bug][issue-link]
@@ -31,20 +31,20 @@
 
 ## Overview
 
-[Stockfish][website-link] is a **free and strong UCI chess engine** derived from
+[Brainlearn][website-link] is a **free and strong UCI chess engine** derived from
 Glaurung 2.1 that analyzes chess positions and computes the optimal moves.
 
-Stockfish **does not include a graphical user interface** (GUI) that is required
+Brainlearn **does not include a graphical user interface** (GUI) that is required
 to display a chessboard and to make it easy to input moves. These GUIs are
-developed independently from Stockfish and are available online. **Read the
+developed independently from Brainlearn and are available online. **Read the
 documentation for your GUI** of choice for information about how to use
-Stockfish with it.
+Brainlearn with it.
 
-See also the Stockfish [documentation][wiki-usage-link] for further usage help.
+See also the Brainlearn [documentation][wiki-usage-link] for further usage help.
 
 ## Files
 
-This distribution of Stockfish consists of the following files:
+This distribution of Brainlearn consists of the following files:
 
   * [README.md][readme-link], the file you are currently reading.
 
@@ -54,7 +54,7 @@ This distribution of Stockfish consists of the following files:
   * [AUTHORS][authors-link], a text file with the list of authors for the project.
 
   * [src][src-link], a subdirectory containing the full source code, including a
-    Makefile that can be used to compile Stockfish on Unix-like systems.
+    Makefile that can be used to compile Brainlearn on Unix-like systems.
 
   * a file with the .nnue extension, storing the neural network for the NNUE
     evaluation. Binary distributions will have this file embedded.
@@ -65,23 +65,23 @@ __See [Contributing Guide](CONTRIBUTING.md).__
 
 ### Donating hardware
 
-Improving Stockfish requires a massive amount of testing. You can donate your
+Improving Brainlearn requires a massive amount of testing. You can donate your
 hardware resources by installing the [Fishtest Worker][worker-link] and viewing
 the current tests on [Fishtest][fishtest-link].
 
 ### Improving the code
 
 In the [chessprogramming wiki][programming-link], many techniques used in
-Stockfish are explained with a lot of background information.
-The [section on Stockfish][programmingsf-link] describes many features
-and techniques used by Stockfish. However, it is generic rather than
-focused on Stockfish's precise implementation.
+Brainlearn are explained with a lot of background information.
+The [section on Brainlearn][programmingsf-link] describes many features
+and techniques used by Brainlearn. However, it is generic rather than
+focused on Brainlearn's precise implementation.
 
 The engine testing is done on [Fishtest][fishtest-link].
-If you want to help improve Stockfish, please read this [guideline][guideline-link]
-first, where the basics of Stockfish development are explained.
+If you want to help improve Brainlearn, please read this [guideline][guideline-link]
+first, where the basics of Brainlearn development are explained.
 
-Discussions about Stockfish take place these days mainly in the Stockfish
+Discussions about Brainlearn take place these days mainly in the Brainlearn
 [Discord server][discord-link]. This is also the best place to ask questions
 about the codebase and how to improve it.
 
@@ -110,7 +110,7 @@ It is a collection of one or more positions stored with the following format (si
 - _board signature (hash key)_
 - _best move depth_
 - _best move score_
-- _best move performance_ , a new parameter you can calculate with any learning application supporting this specification. An example is the private one, kernel of SaaS part of [Alpha-Chess](http://www.alpha-chess.com) AI portal. The idea is to update it based on pattern recognition concept. In the portal, you can also exploit the reports of another NLG (virtual trainer) application and buy the products in the digishop based on all this. This open-source part has the performance default, based on score and depth. You can align the performance by uci token quickresetexp. Clearly, even if already strong, this private learning algorithm is a lot stronger as demostrate here: [Graphical result](https://github.com/amchess/BrainLearn/tree/master/tests/6-5.jpg) The perfomance, in this case, is updated based on the latest Stockfish wdl model (score and material).
+- _best move performance_ , a new parameter you can calculate with any learning application supporting this specification. An example is the private one, kernel of SaaS part of [Alpha-Chess](http://www.alpha-chess.com) AI portal. The idea is to update it based on pattern recognition concept. In the portal, you can also exploit the reports of another NLG (virtual trainer) application and buy the products in the digishop based on all this. This open-source part has the performance default, based on score and depth. You can align the performance by uci token quickresetexp. Clearly, even if already strong, this private learning algorithm is a lot stronger as demostrate here: [Graphical result](https://github.com/amchess/BrainLearn/tree/master/tests/6-5.jpg) The perfomance, in this case, is updated based on the latest Brainlearn wdl model (score and material).
 
 This file is loaded in an hashtable at the engine load and updated each time the engine receive quit or stop uci command.
 When BrainLearn starts a new game or when we have max 8 pieces on the chessboard, the learning is activated and the hash table updated each time the engine has a best score
@@ -209,7 +209,7 @@ Same explaination as **BIN Book 1 Depth**, but for the second book
 Same explaination as **(CTG) Book 1 Only Green**, but for the second book
 
 #### UCI commands
-Polyfish supports all UCI commands supported by Brainlearn. *Click [here](https://github.com/official-stockfish/Brainlearn/blob/master/README.md#the-uci-protocol-and-available-options) to see the full list of supported Brainlearn UCI commands*
+Polyfish supports all UCI commands supported by Brainlearn. *Click [here](https://github.com/official-brainlearn/Brainlearn/blob/master/README.md#the-uci-protocol-and-available-options) to see the full list of supported Brainlearn UCI commands*
 
 Polyfish also supports the following UCI commands
 
@@ -398,35 +398,42 @@ where the source code can be found) to generate the exact binary you are
 distributing. If you make any changes to the source code, these changes must
 also be made available under GPL v3.
 
+## Acknowledgements
 
-[authors-link]:       https://github.com/official-stockfish/Stockfish/blob/master/AUTHORS
-[build-link]:         https://github.com/official-stockfish/Stockfish/actions/workflows/stockfish.yml
-[commits-link]:       https://github.com/official-stockfish/Stockfish/commits/master
+Brainlearn uses neural networks trained on [data provided by the Leela Chess Zero
+project][lc0-data-link], which is made available under the [Open Database License][odbl-link] (ODbL).
+
+
+[authors-link]:       https://github.com/official-brainlearn/Brainlearn/blob/master/AUTHORS
+[build-link]:         https://github.com/official-brainlearn/Brainlearn/actions/workflows/brainlearn.yml
+[commits-link]:       https://github.com/official-brainlearn/Brainlearn/commits/master
 [discord-link]:       https://discord.gg/GWDRS3kU6R
-[issue-link]:         https://github.com/official-stockfish/Stockfish/issues/new?assignees=&labels=&template=BUG-REPORT.yml
-[discussions-link]:   https://github.com/official-stockfish/Stockfish/discussions/new
-[fishtest-link]:      https://tests.stockfishchess.org/tests
-[guideline-link]:     https://github.com/official-stockfish/fishtest/wiki/Creating-my-first-test
-[license-link]:       https://github.com/official-stockfish/Stockfish/blob/master/Copying.txt
+[issue-link]:         https://github.com/official-brainlearn/Brainlearn/issues/new?assignees=&labels=&template=BUG-REPORT.yml
+[discussions-link]:   https://github.com/official-brainlearn/Brainlearn/discussions/new
+[fishtest-link]:      https://tests.brainlearnchess.org/tests
+[guideline-link]:     https://github.com/official-brainlearn/fishtest/wiki/Creating-my-first-test
+[license-link]:       https://github.com/official-brainlearn/Brainlearn/blob/master/Copying.txt
 [programming-link]:   https://www.chessprogramming.org/Main_Page
-[programmingsf-link]: https://www.chessprogramming.org/Stockfish
-[readme-link]:        https://github.com/official-stockfish/Stockfish/blob/master/README.md
-[release-link]:       https://github.com/official-stockfish/Stockfish/releases/latest
-[src-link]:           https://github.com/official-stockfish/Stockfish/tree/master/src
-[stockfish128-logo]:  https://stockfishchess.org/images/logo/icon_128x128.png
+[programmingsf-link]: https://www.chessprogramming.org/Brainlearn
+[readme-link]:        https://github.com/official-brainlearn/Brainlearn/blob/master/README.md
+[release-link]:       https://github.com/official-brainlearn/Brainlearn/releases/latest
+[src-link]:           https://github.com/official-brainlearn/Brainlearn/tree/master/src
+[brainlearn128-logo]:  https://brainlearnchess.org/images/logo/icon_128x128.png
 [uci-link]:           https://backscattering.de/chess/uci/
-[website-link]:       https://stockfishchess.org
-[website-blog-link]:  https://stockfishchess.org/blog/
-[wiki-link]:          https://github.com/official-stockfish/Stockfish/wiki
-[wiki-compile-link]:  https://github.com/official-stockfish/Stockfish/wiki/Compiling-from-source
-[wiki-uci-link]:      https://github.com/official-stockfish/Stockfish/wiki/UCI-&-Commands
-[wiki-usage-link]:    https://github.com/official-stockfish/Stockfish/wiki/Download-and-usage
-[worker-link]:        https://github.com/official-stockfish/fishtest/wiki/Running-the-worker
+[website-link]:       https://brainlearnchess.org
+[website-blog-link]:  https://brainlearnchess.org/blog/
+[wiki-link]:          https://github.com/official-brainlearn/Brainlearn/wiki
+[wiki-compile-link]:  https://github.com/official-brainlearn/Brainlearn/wiki/Compiling-from-source
+[wiki-uci-link]:      https://github.com/official-brainlearn/Brainlearn/wiki/UCI-&-Commands
+[wiki-usage-link]:    https://github.com/official-brainlearn/Brainlearn/wiki/Download-and-usage
+[worker-link]:        https://github.com/official-brainlearn/fishtest/wiki/Running-the-worker
+[lc0-data-link]:      https://storage.lczero.org/files/training_data
+[odbl-link]:          https://opendatacommons.org/licenses/odbl/odbl-10.txt
 
-[build-badge]:        https://img.shields.io/github/actions/workflow/status/official-stockfish/Stockfish/stockfish.yml?branch=master&style=for-the-badge&label=stockfish&logo=github
-[commits-badge]:      https://img.shields.io/github/commits-since/official-stockfish/Stockfish/latest?style=for-the-badge
+[build-badge]:        https://img.shields.io/github/actions/workflow/status/official-brainlearn/Brainlearn/brainlearn.yml?branch=master&style=for-the-badge&label=brainlearn&logo=github
+[commits-badge]:      https://img.shields.io/github/commits-since/official-brainlearn/Brainlearn/latest?style=for-the-badge
 [discord-badge]:      https://img.shields.io/discord/435943710472011776?style=for-the-badge&label=discord&logo=Discord
-[fishtest-badge]:     https://img.shields.io/website?style=for-the-badge&down_color=red&down_message=Offline&label=Fishtest&up_color=success&up_message=Online&url=https%3A%2F%2Ftests.stockfishchess.org%2Ftests%2Ffinished
-[license-badge]:      https://img.shields.io/github/license/official-stockfish/Stockfish?style=for-the-badge&label=license&color=success
-[release-badge]:      https://img.shields.io/github/v/release/official-stockfish/Stockfish?style=for-the-badge&label=official%20release
-[website-badge]:      https://img.shields.io/website?style=for-the-badge&down_color=red&down_message=Offline&label=website&up_color=success&up_message=Online&url=https%3A%2F%2Fstockfishchess.org
+[fishtest-badge]:     https://img.shields.io/website?style=for-the-badge&down_color=red&down_message=Offline&label=Fishtest&up_color=success&up_message=Online&url=https%3A%2F%2Ftests.brainlearnchess.org%2Ftests%2Ffinished
+[license-badge]:      https://img.shields.io/github/license/official-brainlearn/Brainlearn?style=for-the-badge&label=license&color=success
+[release-badge]:      https://img.shields.io/github/v/release/official-brainlearn/Brainlearn?style=for-the-badge&label=official%20release
+[website-badge]:      https://img.shields.io/website?style=for-the-badge&down_color=red&down_message=Offline&label=website&up_color=success&up_message=Online&url=https%3A%2F%2Fbrainlearnchess.org

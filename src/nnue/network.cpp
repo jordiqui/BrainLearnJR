@@ -1,6 +1,6 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2024 The Brainlearn developers (see AUTHORS file)
+  Brainlearn, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2025 The Brainlearn developers (see AUTHORS file)
 
   Brainlearn is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -26,8 +26,10 @@
 #include <type_traits>
 #include <vector>
 
-#include "../evaluate.h"
+#define INCBIN_SILENCE_BITCODE_WARNING
 #include "../incbin/incbin.h"
+
+#include "../evaluate.h"
 #include "../memory.h"
 #include "../misc.h"
 #include "../position.h"
@@ -36,7 +38,6 @@
 #include "nnue_common.h"
 #include "nnue_misc.h"
 
-namespace {
 // Macro to embed the default efficiently updatable neural network (NNUE) file
 // data in the engine binary (using incbin.h, by Dale Weiler).
 // This macro invocation will declare the following three variables
@@ -55,6 +56,8 @@ const unsigned char        gEmbeddedNNUESmallData[1] = {0x0};
 const unsigned char* const gEmbeddedNNUESmallEnd     = &gEmbeddedNNUESmallData[1];
 const unsigned int         gEmbeddedNNUESmallSize    = 1;
 #endif
+
+namespace {
 
 struct EmbeddedNNUE {
     EmbeddedNNUE(const unsigned char* embeddedData,
@@ -98,7 +101,7 @@ bool read_parameters(std::istream& stream, T& reference) {
 
 // Write evaluation function parameters
 template<typename T>
-bool write_parameters(std::ostream& stream, const T& reference) {
+bool write_parameters(std::ostream& stream, T& reference) {
 
     write_little_endian<std::uint32_t>(stream, T::get_hash_value());
     return reference.write_parameters(stream);
@@ -207,27 +210,19 @@ bool Network<Arch, Transformer>::save(const std::optional<std::string>& filename
 template<typename Arch, typename Transformer>
 NetworkOutput
 Network<Arch, Transformer>::evaluate(const Position&                         pos,
+                                     AccumulatorStack&                       accumulatorStack,
                                      AccumulatorCaches::Cache<FTDimensions>* cache) const {
-    // We manually align the arrays on the stack because with gcc < 9.3
-    // overaligning stack variables with alignas() doesn't work correctly.
 
     constexpr uint64_t alignment = CacheLineSize;
 
-#if defined(ALIGNAS_ON_STACK_VARIABLES_BROKEN)
-    TransformedFeatureType
-      transformedFeaturesUnaligned[FeatureTransformer<FTDimensions, nullptr>::BufferSize
-                                   + alignment / sizeof(TransformedFeatureType)];
-
-    auto* transformedFeatures = align_ptr_up<alignment>(&transformedFeaturesUnaligned[0]);
-#else
-    alignas(alignment) TransformedFeatureType
-      transformedFeatures[FeatureTransformer<FTDimensions, nullptr>::BufferSize];
-#endif
+    alignas(alignment)
+      TransformedFeatureType transformedFeatures[FeatureTransformer<FTDimensions>::BufferSize];
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
-    const int  bucket     = (pos.count<ALL_PIECES>() - 1) / 4;
-    const auto psqt       = featureTransformer->transform(pos, cache, transformedFeatures, bucket);
+    const int  bucket = (pos.count<ALL_PIECES>() - 1) / 4;
+    const auto psqt =
+      featureTransformer->transform(pos, accumulatorStack, cache, transformedFeatures, bucket);
     const auto positional = network[bucket].propagate(transformedFeatures);
     return {static_cast<Value>(psqt / OutputScale), static_cast<Value>(positional / OutputScale)};
 }
@@ -249,7 +244,7 @@ void Network<Arch, Transformer>::verify(std::string                             
             std::string msg3 = "The UCI option EvalFile might need to specify the full path, "
                                "including the directory name, to the network file.";
             std::string msg4 = "The default net can be downloaded from: "
-                               "https://tests.stockfishchess.org/api/nn/"
+                               "https://tests.brainlearnchess.org/api/nn/"
                              + evalFile.defaultName;
             std::string msg5 = "The engine will be terminated now.";
 
@@ -265,9 +260,8 @@ void Network<Arch, Transformer>::verify(std::string                             
     if (f)
     {
         size_t size = sizeof(*featureTransformer) + sizeof(Arch) * LayerStacks;
-        f("info string NNUE evaluation using " + evalfilePath + " ("
-          + std::to_string(size / (1024 * 1024)) + "MiB, ("
-          + std::to_string(featureTransformer->InputDimensions) + ", "
+        f("NNUE evaluation using " + evalfilePath + " (" + std::to_string(size / (1024 * 1024))
+          + "MiB, (" + std::to_string(featureTransformer->InputDimensions) + ", "
           + std::to_string(network[0].TransformedFeatureDimensions) + ", "
           + std::to_string(network[0].FC_0_OUTPUTS) + ", " + std::to_string(network[0].FC_1_OUTPUTS)
           + ", 1))");
@@ -276,29 +270,15 @@ void Network<Arch, Transformer>::verify(std::string                             
 
 
 template<typename Arch, typename Transformer>
-void Network<Arch, Transformer>::hint_common_access(
-  const Position& pos, AccumulatorCaches::Cache<FTDimensions>* cache) const {
-    featureTransformer->hint_common_access(pos, cache);
-}
-
-template<typename Arch, typename Transformer>
 NnueEvalTrace
 Network<Arch, Transformer>::trace_evaluate(const Position&                         pos,
+                                           AccumulatorStack&                       accumulatorStack,
                                            AccumulatorCaches::Cache<FTDimensions>* cache) const {
-    // We manually align the arrays on the stack because with gcc < 9.3
-    // overaligning stack variables with alignas() doesn't work correctly.
+
     constexpr uint64_t alignment = CacheLineSize;
 
-#if defined(ALIGNAS_ON_STACK_VARIABLES_BROKEN)
-    TransformedFeatureType
-      transformedFeaturesUnaligned[FeatureTransformer<FTDimensions, nullptr>::BufferSize
-                                   + alignment / sizeof(TransformedFeatureType)];
-
-    auto* transformedFeatures = align_ptr_up<alignment>(&transformedFeaturesUnaligned[0]);
-#else
-    alignas(alignment) TransformedFeatureType
-      transformedFeatures[FeatureTransformer<FTDimensions, nullptr>::BufferSize];
-#endif
+    alignas(alignment)
+      TransformedFeatureType transformedFeatures[FeatureTransformer<FTDimensions>::BufferSize];
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
@@ -307,7 +287,7 @@ Network<Arch, Transformer>::trace_evaluate(const Position&                      
     for (IndexType bucket = 0; bucket < LayerStacks; ++bucket)
     {
         const auto materialist =
-          featureTransformer->transform(pos, cache, transformedFeatures, bucket);
+          featureTransformer->transform(pos, accumulatorStack, cache, transformedFeatures, bucket);
         const auto positional = network[bucket].propagate(transformedFeatures);
 
         t.psqt[bucket]       = static_cast<Value>(materialist / OutputScale);
@@ -451,14 +431,12 @@ bool Network<Arch, Transformer>::write_parameters(std::ostream&      stream,
     return bool(stream);
 }
 
-// Explicit template instantiation
+// Explicit template instantiations
 
-template class Network<
-  NetworkArchitecture<TransformedFeatureDimensionsBig, L2Big, L3Big>,
-  FeatureTransformer<TransformedFeatureDimensionsBig, &StateInfo::accumulatorBig>>;
+template class Network<NetworkArchitecture<TransformedFeatureDimensionsBig, L2Big, L3Big>,
+                       FeatureTransformer<TransformedFeatureDimensionsBig>>;
 
-template class Network<
-  NetworkArchitecture<TransformedFeatureDimensionsSmall, L2Small, L3Small>,
-  FeatureTransformer<TransformedFeatureDimensionsSmall, &StateInfo::accumulatorSmall>>;
+template class Network<NetworkArchitecture<TransformedFeatureDimensionsSmall, L2Small, L3Small>,
+                       FeatureTransformer<TransformedFeatureDimensionsSmall>>;
 
 }  // namespace Brainlearn::Eval::NNUE

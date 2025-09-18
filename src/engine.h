@@ -1,6 +1,6 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2024 The Brainlearn developers (see AUTHORS file)
+  Brainlearn, a UCI chess playing engine derived from Brainlearn
+  Copyright (C) 2004-2025 The Brainlearn developers (see AUTHORS file)
 
   Brainlearn is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -38,7 +38,6 @@
 #include "ucioption.h"
 
 namespace Brainlearn {
-enum Square : int;
 
 class Engine {
    public:
@@ -120,7 +119,6 @@ class Engine {
     NumaReplicationContext numaContext;
     //from learning
     StateListPtr states;
-    Square       capSq;
 
     OptionsMap                               options;
     ThreadPool                               threads;
