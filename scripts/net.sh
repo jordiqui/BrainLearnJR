@@ -108,6 +108,7 @@ fetch_network() {
 
   for url in \
     "https://tests.stockfishchess.org/api/nn/$_filename" \
+    "https://media.githubusercontent.com/media/official-stockfish/networks/master/$_filename" \
     "https://raw.githubusercontent.com/official-stockfish/networks/master/$_filename" \
     "https://github.com/official-stockfish/networks/raw/master/$_filename"; do
     echo "Downloading from $url ..."
