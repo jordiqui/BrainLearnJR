@@ -1,7 +1,7 @@
 #!/bin/sh
 
 wget_or_curl=$( (command -v wget > /dev/null 2>&1 && echo "wget -qO") || \
-                (command -v curl > /dev/null 2>&1 && echo "curl -skL -o"))
+                (command -v curl > /dev/null 2>&1 && echo "curl -fskL -o"))
 
 
 sha256sum=$( (command -v shasum > /dev/null 2>&1 && echo "shasum -a 256") || \
@@ -95,6 +95,7 @@ fetch_network() {
 
   for url in \
     "https://tests.stockfishchess.org/api/nn/$_filename" \
+    "https://raw.githubusercontent.com/official-stockfish/networks/master/$_filename" \
     "https://github.com/official-stockfish/networks/raw/master/$_filename"; do
     echo "Downloading from $url ..."
     if $wget_or_curl "$_dest" "$url"; then
