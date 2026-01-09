@@ -1,7 +1,7 @@
 #!/bin/sh
 
-wget_or_curl=$( (command -v wget > /dev/null 2>&1 && echo "wget -qO") || \
-                (command -v curl > /dev/null 2>&1 && echo "curl -fskL -o"))
+wget_or_curl=$( (command -v wget > /dev/null 2>&1 && echo "wget -qO-") || \
+                (command -v curl > /dev/null 2>&1 && echo "curl -skL"))
 
 
 sha256sum=$( (command -v shasum > /dev/null 2>&1 && echo "shasum -a 256") || \
@@ -11,11 +11,14 @@ if [ -z "$sha256sum" ]; then
   >&2 echo "sha256sum not found, NNUE files will be assumed valid."
 fi
 
-NNUE_DIR="${NNUE_DIR:-../nnue}"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+NNUE_DIR="${NNUE_DIR:-$REPO_ROOT/nnue}"
+NNUE_OUTPUT_DIR="${NNUE_OUTPUT_DIR:-$REPO_ROOT}"
 SHASUMS_FILE="${NNUE_DIR}/SHASUMS.txt"
 
 get_nnue_filename() {
-  grep "$1" evaluate.h | grep "#define" | sed "s/.*\(nn-[a-z0-9]\{12\}.nnue\).*/\1/"
+  grep "$1" "$REPO_ROOT/src/evaluate.h" | grep "#define" | sed "s/.*\(nn-[a-z0-9]\{12\}.nnue\).*/\1/"
 }
 
 file_size() {
@@ -69,6 +72,7 @@ validate_network() {
 fetch_network() {
   _filename="$(get_nnue_filename "$1")"
   _dest="${NNUE_DIR}/$_filename"
+  _output="${NNUE_OUTPUT_DIR}/$_filename"
 
   if [ -z "$_filename" ]; then
     >&2 echo "NNUE file name not found for: $1"
@@ -77,10 +81,19 @@ fetch_network() {
 
   mkdir -p "$NNUE_DIR"
 
+  if [ -f "$_output" ]; then
+    if validate_network "$_output"; then
+      echo "Existing $_filename validated, skipping download"
+      return
+    else
+      echo "Removing invalid NNUE file: $_filename"
+    fi
+  fi
+
   if [ -f "$_dest" ]; then
     if validate_network "$_dest"; then
-      echo "Existing $_filename validated, skipping download"
-      cp -f "$_dest" "$_filename"
+      echo "Existing $_filename validated in NNUE directory, copying"
+      cp -f "$_dest" "$_output"
       return
     else
       echo "Removing invalid NNUE file: $_filename"
@@ -98,7 +111,7 @@ fetch_network() {
     "https://raw.githubusercontent.com/official-stockfish/networks/master/$_filename" \
     "https://github.com/official-stockfish/networks/raw/master/$_filename"; do
     echo "Downloading from $url ..."
-    if $wget_or_curl "$_dest" "$url"; then
+    if $wget_or_curl "$url" > "$_dest"; then
       if validate_network "$_dest"; then
         echo "Successfully validated $_filename"
       else
@@ -110,7 +123,7 @@ fetch_network() {
     fi
     if [ -f "$_dest" ]; then
       update_shasums
-      cp -f "$_dest" "$_filename"
+      cp -f "$_dest" "$_output"
       return
     fi
   done
