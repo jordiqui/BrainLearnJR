@@ -53,10 +53,12 @@ else ifeq ($(COMP),mingw)
 endif
 
 ### Executable name
+ENGINE_NAME = BrainlearnJR-090126
+ARCH_SUFFIX = $(if $(findstring avx512,$(ARCH)),-avx512,$(if $(findstring bmi2,$(ARCH)),-bmi2,$(if $(findstring avx2,$(ARCH)),-avx2,$(if $(findstring sse41-popcnt,$(ARCH)),-sse41popcnt,$(if $(findstring modern,$(ARCH)),-sse41popcnt,)))))
 ifeq ($(target_windows),yes)
-	EXE = brainlearn.exe
+	EXE = $(ENGINE_NAME)$(ARCH_SUFFIX).exe
 else
-	EXE = brainlearn
+	EXE = $(ENGINE_NAME)$(ARCH_SUFFIX)
 endif
 
 ### Installation dir definitions

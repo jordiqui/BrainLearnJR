@@ -1,12 +1,9 @@
 cmake_minimum_required(VERSION 3.17)
-project(Brainlearn)
+project(BrainlearnJR-090126)
 
 # Determine operating system
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     set(TARGET_WINDOWS yes)
-    set(EXE brainlearn.exe)
-else()
-    set(EXE brainlearn)
 endif()
 
 # Set default installation directory
@@ -63,6 +60,23 @@ option(USE_VNNI512 "Enable VNNI512 instruction set" OFF)
 option(USE_NEON "Enable NEON instruction set" OFF)
 option(USE_DOTPROD "Enable NEON Dot Product instruction set" OFF)
 option(BITS "Set 32/64 bit build" 64)
+
+set(ENGINE_NAME BrainlearnJR-090126)
+set(ENGINE_SUFFIX "")
+
+if(USE_AVX512)
+    set(ENGINE_SUFFIX "-avx512")
+elseif(USE_AVX2)
+    set(ENGINE_SUFFIX "-avx2")
+elseif(USE_SSE41 AND USE_POPCNT)
+    set(ENGINE_SUFFIX "-sse41popcnt")
+endif()
+
+if(TARGET_WINDOWS)
+    set(EXE ${ENGINE_NAME}${ENGINE_SUFFIX}.exe)
+else()
+    set(EXE ${ENGINE_NAME}${ENGINE_SUFFIX})
+endif()
 
 # Set the compiler flags
 set(CMAKE_CXX_STANDARD 17)
