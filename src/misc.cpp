@@ -1,6 +1,6 @@
 /*
   Brainlearn, a UCI chess playing engine derived from Brainlearn
-  Copyright (C) 2004-2025 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
+  Copyright (C) 2004-2026 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
 
   Brainlearn is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -31,11 +31,7 @@
 #include <limits>
 #include <mutex>
 #include <sstream>
-//not used string_view: improved from Brainlearn
-//from Brainlearn begin
-#include <algorithm>
-#include <stdarg.h>
-//from Brainlearn end
+#include <string_view>
 
 #include "types.h"
 
@@ -48,7 +44,7 @@ constexpr std::string_view version = "31";
 
 // Our fancy logging facility. The trick here is to replace cin.rdbuf() and
 // cout.rdbuf() with two Tie objects that tie cin and cout to a file stream. We
-// can toggle the logging of std::cout and std:cin at runtime whilst preserving
+// can toggle the logging of std::cout and std::cin at runtime whilst preserving
 // usual I/O functionality, all without changing a single line of code!
 // Idea from http://groups.google.com/group/comp.lang.c++/msg/1d941c0f26ea0d81
 
@@ -263,12 +259,12 @@ std::string compiler_info() {
 #if defined(USE_SSE2)
     compiler += " SSE2";
 #endif
-    compiler += (HasPopCnt ? " POPCNT" : "");
 #if defined(USE_NEON_DOTPROD)
     compiler += " NEON_DOTPROD";
 #elif defined(USE_NEON)
     compiler += " NEON";
 #endif
+    compiler += (HasPopCnt ? " POPCNT" : "");
 
 #if !defined(NDEBUG)
     compiler += " DEBUG";
@@ -483,17 +479,7 @@ bool is_whitespace(std::string_view s) {
     return std::all_of(s.begin(), s.end(), [](char c) { return std::isspace(c); });
 }
 
-//from learning begin
-CommandLine::CommandLine(int _argc, char** _argv) :
-    argc(_argc),
-    argv(_argv) {
-    workingDirectory = CommandLine::get_working_directory();
-    binaryDirectory  = CommandLine::get_binary_directory(argv[0], workingDirectory);
-    Util::init(this);
-    //from learning end
-}
-
-std::string CommandLine::get_binary_directory(std::string argv0, std::string workingDirectory) {
+std::string CommandLine::get_binary_directory(std::string argv0) {
     std::string pathSeparator;
 
 #ifdef _WIN32
@@ -508,7 +494,10 @@ std::string CommandLine::get_binary_directory(std::string argv0, std::string wor
 #else
     pathSeparator = "/";
 #endif
-    //from learning end
+
+    // Extract the working directory
+    auto workingDirectory = CommandLine::get_working_directory();
+
     // Extract the binary directory path from argv0
     auto   binaryDirectory = argv0;
     size_t pos             = binaryDirectory.find_last_of("\\/");
@@ -518,13 +507,9 @@ std::string CommandLine::get_binary_directory(std::string argv0, std::string wor
         binaryDirectory.resize(pos + 1);
 
     // Pattern replacement: "./" at the start of path is replaced by the working directory
-    //from learning begin
     if (binaryDirectory.find("." + pathSeparator) == 0)
-    {
         binaryDirectory.replace(0, 1, workingDirectory);
-    }
-    binaryDirectory = Util::fix_path(binaryDirectory);
-    //from learning end
+
     return binaryDirectory;
 }
 
@@ -532,140 +517,11 @@ std::string CommandLine::get_working_directory() {
     std::string workingDirectory = "";
     char        buff[40000];
     char*       cwd = GETCWD(buff, 40000);
-    //from learning begin
     if (cwd)
-    {
         workingDirectory = cwd;
-    }
-    workingDirectory = Util::fix_path(workingDirectory);  //learning
-    //from learning end
+
     return workingDirectory;
 }
-
-//Book management and learning begin
-CommandLine* Util::cli = nullptr;
-void         Util::init(CommandLine* _cli) { cli = _cli; }
-std::string  Util::unquote(const std::string& s) {
-    std::string s1 = s;
-
-    if (s1.size() > 2)
-    {
-        if ((s1.front() == '\"' && s1.back() == '\"') || (s1.front() == '\'' && s1.back() == '\''))
-        {
-            s1 = s1.substr(1, s1.size() - 2);
-        }
-    }
-
-    return s1;
-}
-
-bool Util::is_empty_filename(const std::string& fn) {
-    if (fn.empty())
-        return true;
-
-    static std::string Empty = EMPTY;
-    return std::equal(fn.begin(), fn.end(), Empty.begin(), Empty.end(),
-                      [](char a, char b) { return tolower(a) == tolower(b); });
-}
-
-std::string Util::fix_path(const std::string& p) {
-    if (is_empty_filename(p))
-        return p;
-
-    std::string p1 = unquote(p);
-    std::replace(p1.begin(), p1.end(), ReverseDirectorySeparator, DirectorySeparator);
-
-    return p1;
-}
-
-std::string Util::combine_path(const std::string& p1, const std::string& p2) {
-    //We don't expect the first part of the path to be empty!
-    assert(is_empty_filename(p1) == false);
-
-    if (is_empty_filename(p2))
-        return p2;
-
-    std::string p;
-    if (p1.back() == DirectorySeparator || p1.back() == ReverseDirectorySeparator)
-        p = p1 + p2;
-    else
-        p = p1 + DirectorySeparator + p2;
-
-    return fix_path(p);
-}
-
-std::string Util::map_path(const std::string& p) {
-    if (is_empty_filename(p))
-        return p;
-
-    std::string p2 = fix_path(p);
-
-    //Make sure we can map this path
-    if (p2.find(DirectorySeparator) == std::string::npos)
-        p2 = combine_path(cli->binaryDirectory, p);
-
-    return p2;
-}
-
-size_t Util::get_file_size(const std::string& f) {
-    if (is_empty_filename(f))
-        return (size_t) -1;
-
-    std::ifstream in(map_path(f), std::ifstream::ate | std::ifstream::binary);
-    if (!in.is_open())
-        return (size_t) -1;
-
-    return (size_t) in.tellg();
-}
-
-bool Util::is_same_file(const std::string& f1, const std::string& f2) {
-    return map_path(f1) == map_path(f2);
-}
-
-std::string Util::format_bytes(uint64_t bytes, int decimals) {
-    static const uint64_t KB = 1024;
-    static const uint64_t MB = KB * 1024;
-    static const uint64_t GB = MB * 1024;
-    static const uint64_t TB = GB * 1024;
-
-    std::stringstream ss;
-
-    if (bytes < KB)
-        ss << bytes << " B";
-    else if (bytes < MB)
-        ss << std::fixed << std::setprecision(decimals) << (double(bytes) / KB) << "KB";
-    else if (bytes < GB)
-        ss << std::fixed << std::setprecision(decimals) << (double(bytes) / MB) << "MB";
-    else if (bytes < TB)
-        ss << std::fixed << std::setprecision(decimals) << (double(bytes) / GB) << "GB";
-    else
-        ss << std::fixed << std::setprecision(decimals) << (double(bytes) / TB) << "TB";
-
-    return ss.str();
-}
-
-//Code is an `edited` version of: https://stackoverflow.com/a/49812018
-std::string Util::format_string(const char* const fmt, ...) {
-    //Initialize use of the variable arguments
-    va_list vaArgs;
-    va_start(vaArgs, fmt);
-
-    //Acquire the required string size
-    va_start(vaArgs, fmt);
-    int len = vsnprintf(nullptr, 0, fmt, vaArgs);
-    va_end(vaArgs);
-
-
-    //Allocate enough buffer and format
-    std::vector<char> v(len + 1);
-
-    va_start(vaArgs, fmt);
-    vsnprintf(v.data(), v.size(), fmt, vaArgs);
-    va_end(vaArgs);
-
-    return std::string(v.data(), len);
-}
-//Book management and learning end
 
 
 }  // namespace Brainlearn

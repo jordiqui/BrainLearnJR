@@ -1,13 +1,13 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Brainlearn
-  Copyright (C) 2004-2025 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
+  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
 
-  Brainlearn is free software: you can redistribute it and/or modify
+  Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Brainlearn is distributed in the hope that it will be useful,
+  Stockfish is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -27,7 +27,6 @@
 #include <utility>
 
 #include "misc.h"
-#include <set>  //combo management
 
 namespace Brainlearn {
 
@@ -67,36 +66,20 @@ const Option& OptionsMap::operator[](const std::string& name) const {
 
 // Inits options and assigns idx in the correct printing order
 void OptionsMap::add(const std::string& name, const Option& option) {
-    //combo management begin
-    auto it = options_map.find(name);
-
-    if (it == options_map.end())  // Se l'opzione NON esiste ancora, la aggiungiamo
+    if (!options_map.count(name))
     {
         static size_t insert_order = 0;
-        options_map[name]          = option;
-        options_map[name].parent   = this;
-        options_map[name].idx      = insert_order++;
+
+        options_map[name] = option;
+
+        options_map[name].parent = this;
+        options_map[name].idx    = insert_order++;
     }
     else
     {
-        const Option& existingOption = it->second;
-        if (existingOption.type == "combo" && option.type == "combo")
-        {
-            if (existingOption.defaultValue == option.defaultValue)
-            {
-                return;
-            }
-            else
-            {
-                options_map[name] = option;
-                return;
-            }
-        }
-
         std::cerr << "Option \"" << name << "\" was already added!" << std::endl;
         std::exit(EXIT_FAILURE);
     }
-    //combo management end
 }
 
 
@@ -150,7 +133,7 @@ Option::operator int() const {
 }
 
 Option::operator std::string() const {
-    assert(type == "string" || type == "combo");  //combo
+    assert(type == "string");
     return currentValue;
 }
 
@@ -168,26 +151,21 @@ bool Option::operator!=(const char* s) const { return !(*this == s); }
 Option& Option::operator=(const std::string& v) {
 
     assert(!type.empty());
-    //combo management begin
+
     if ((type != "button" && type != "string" && v.empty())
         || (type == "check" && v != "true" && v != "false")
         || (type == "spin" && (std::stoi(v) < min || std::stoi(v) > max)))
-    {
         return *this;
-    }
 
     if (type == "combo")
     {
-        std::set<std::string, CaseInsensitiveLess> comboSet;
-        std::istringstream                         ss(defaultValue);
-        std::string                                token;
-
+        OptionsMap         comboMap;  // To have case insensitive compare
+        std::string        token;
+        std::istringstream ss(defaultValue);
         while (ss >> token)
-            if (token != "var")
-                comboSet.insert(token);
-        if (!comboSet.count(v))
+            comboMap.add(token, Option());
+        if (!comboMap.count(v) || v == "var")
             return *this;
-        //combo management end
     }
 
     if (type == "string")

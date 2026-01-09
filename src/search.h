@@ -1,13 +1,13 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Brainlearn
-  Copyright (C) 2004-2025 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
+  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
 
-  Brainlearn is free software: you can redistribute it and/or modify
+  Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Brainlearn is distributed in the hope that it will be useful,
+  Stockfish is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -26,6 +26,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -40,11 +41,6 @@
 #include "score.h"
 #include "syzygy/tbprobe.h"
 #include "timeman.h"
-//from Brainlearn begin
-#include "evaluate.h"
-#include "book/book_manager.h"
-#include <memory>
-//from Brainlearn end
 #include "types.h"
 
 namespace Brainlearn {
@@ -80,7 +76,6 @@ struct Stack {
     bool                        ttHit;
     int                         cutoffCnt;
     int                         reduction;
-    int                         quietMoveStreak;
 };
 
 
@@ -108,7 +103,7 @@ struct RootMove {
     bool              scoreUpperbound  = false;
     int               selDepth         = 0;
     int               tbRank           = 0;
-    Value             tbScore          = 0;  //for windows build
+    Value             tbScore;
     std::vector<Move> pv;
 };
 
@@ -139,24 +134,22 @@ struct LimitsType {
 // The UCI stores the uci options, thread pool, and transposition table.
 // This struct is used to easily forward data to the Search::Worker class.
 struct SharedState {
-    //from Polyfish begin
-    SharedState(BookManager&                                    bm,
-                const OptionsMap&                               optionsMap,
-                ThreadPool&                                     threadPool,
-                TranspositionTable&                             transpositionTable,
-                const LazyNumaReplicated<Eval::NNUE::Networks>& nets) :
-        bookMan(bm),
+    SharedState(const OptionsMap&                                         optionsMap,
+                ThreadPool&                                               threadPool,
+                TranspositionTable&                                       transpositionTable,
+                std::map<NumaIndex, SharedHistories>&                     sharedHists,
+                const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& nets) :
         options(optionsMap),
         threads(threadPool),
         tt(transpositionTable),
+        sharedHistories(sharedHists),
         networks(nets) {}
 
-    BookManager& bookMan;
-    //from Polyfish end
-    const OptionsMap&                               options;
-    ThreadPool&                                     threads;
-    TranspositionTable&                             tt;
-    const LazyNumaReplicated<Eval::NNUE::Networks>& networks;
+    const OptionsMap&                                         options;
+    ThreadPool&                                               threads;
+    TranspositionTable&                                       tt;
+    std::map<NumaIndex, SharedHistories>&                     sharedHistories;
+    const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& networks;
 };
 
 class Worker;
@@ -196,9 +189,9 @@ struct InfoIteration {
 // Skill structure is used to implement strength limit. If we have a UCI_Elo,
 // we convert it to an appropriate skill level, anchored to the Stash engine.
 // This method is based on a fit of the Elo results for games played between
-// Brainlearn at various skill levels and various versions of the Stash engine.
+// Stockfish at various skill levels and various versions of the Stash engine.
 // Skill 0 .. 19 now covers CCRL Blitz Elo from 1320 to 3190, approximately
-// Reference: https://github.com/vondele/Brainlearn/commit/a08b8d4e9711c2
+// Reference: https://github.com/vondele/Stockfish/commit/a08b8d4e9711c2
 struct Skill {
     // Lowest and highest Elo ratings used in the skill level calculation
     constexpr static int LowestElo  = 1320;
@@ -249,9 +242,9 @@ class SearchManager: public ISearchManager {
             Depth                     depth);
 
     Brainlearn::TimeManagement tm;
-    double                     originalTimeAdjust;
-    int                        callsCnt;
-    std::atomic_bool           ponder;
+    double                    originalTimeAdjust;
+    int                       callsCnt;
+    std::atomic_bool          ponder;
 
     std::array<Value, 4> iterValue;
     double               previousTimeReduction;
@@ -269,14 +262,17 @@ class NullSearchManager: public ISearchManager {
     void check_time(Search::Worker&) override {}
 };
 
-
 // Search::Worker is the class that does the actual search.
 // It is instantiated once per thread, and it is responsible for keeping track
 // of the search history, and storing data required for the search.
 class Worker {
    public:
-    size_t threadIdx;  //mcts
-    Worker(SharedState&, std::unique_ptr<ISearchManager>, size_t, NumaReplicatedAccessToken);
+    Worker(SharedState&,
+           std::unique_ptr<ISearchManager>,
+           size_t,
+           size_t,
+           size_t,
+           NumaReplicatedAccessToken);
 
     // Called at instantiation to initialize reductions tables.
     // Reset histories, usually before a new game.
@@ -289,35 +285,25 @@ class Worker {
     bool is_mainthread() const { return threadIdx == 0; }
 
     void ensure_network_replicated();
-    //from Montecarlo begin
-    Value minimax_value(Position& pos, Search::Stack* ss, Depth depth);
-    Value minimax_value(Position& pos, Search::Stack* ss, Depth depth, Value alpha, Value beta);
-    //from Montecarlo end
 
     // Public because they need to be updatable by the stats
     ButterflyHistory mainHistory;
     LowPlyHistory    lowPlyHistory;
 
-    CapturePieceToHistory captureHistory;
-    ContinuationHistory   continuationHistory[2][2];
-    PawnHistory           pawnHistory;
-
-    CorrectionHistory<Pawn>         pawnCorrectionHistory;
-    CorrectionHistory<Minor>        minorPieceCorrectionHistory;
-    CorrectionHistory<NonPawn>      nonPawnCorrectionHistory;
+    CapturePieceToHistory           captureHistory;
+    ContinuationHistory             continuationHistory[2][2];
     CorrectionHistory<Continuation> continuationCorrectionHistory;
 
-    TTMoveHistory ttMoveHistory;
-    RootMoves     rootMoves;                  //mcts
-    Depth         completedDepth;             //mcts
-    Value         evaluate(const Position&);  //mcts
+    TTMoveHistory    ttMoveHistory;
+    SharedHistories& sharedHistory;
+
    private:
     void iterative_deepening();
 
     void do_move(Position& pos, const Move move, StateInfo& st, Stack* const ss);
     void
     do_move(Position& pos, const Move move, StateInfo& st, const bool givesCheck, Stack* const ss);
-    void do_null_move(Position& pos, StateInfo& st);
+    void do_null_move(Position& pos, StateInfo& st, Stack* const ss);
     void undo_move(Position& pos, const Move move);
     void undo_null_move(Position& pos);
 
@@ -340,22 +326,23 @@ class Worker {
     TimePoint elapsed() const;
     TimePoint elapsed_time() const;
 
-    //mcts
+    Value evaluate(const Position&);
 
     LimitsType limits;
 
     size_t                pvIdx, pvLast;
     std::atomic<uint64_t> nodes, tbHits, bestMoveChanges;
     int                   selDepth, nmpMinPly;
-    Value                 optimism[COLOR_NB];
+
+    Value optimism[COLOR_NB];
 
     Position  rootPos;
     StateInfo rootState;
-    //mcts
-    Depth rootDepth;  //mcts
-    Value rootDelta;
+    RootMoves rootMoves;
+    Depth     rootDepth, completedDepth;
+    Value     rootDelta;
 
-    //for mcts
+    size_t                    threadIdx, numaThreadIdx, numaTotal;
     NumaReplicatedAccessToken numaAccessToken;
 
     // Reductions lookup table initialized at startup
@@ -366,13 +353,10 @@ class Worker {
 
     Tablebases::Config tbConfig;
 
-    //From PolyFish begin
-    BookManager& bookMan;
-    //From PolyFish end
-    const OptionsMap&                               options;
-    ThreadPool&                                     threads;
-    TranspositionTable&                             tt;
-    const LazyNumaReplicated<Eval::NNUE::Networks>& networks;
+    const OptionsMap&                                         options;
+    ThreadPool&                                               threads;
+    TranspositionTable&                                       tt;
+    const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& networks;
 
     // Used by NNUE
     Eval::NNUE::AccumulatorStack  accumulatorStack;
@@ -386,40 +370,10 @@ struct ConthistBonus {
     int index;
     int weight;
 };
-//livebook begin
-#ifdef USE_LIVEBOOK
-void set_livebook_depth(int book_depth);
-void set_proxy_url(const std::string& proxy_url);
-void set_use_lichess_games(bool lichess_games);
-void set_use_lichess_masters(bool lichess_masters);
-void set_lichess_player(const std::string& lichess_player);
-void set_lichess_player_color(const std::string& lichess_player_color);
-void set_use_chess_db(bool chess_db);
-
-void set_use_chess_db_tablebase(bool chess_db);
-void set_use_lichess_tablebase(bool lichess_tablebase);
-
-void update_livebooks();
-void update_online_tablebases();
-
-void set_chess_db_contribute(bool chess_db_contribute);
-void set_proxy_diversity(bool proxy_diversity);
 
 
-#endif
-//livebook end
-
-void set_variety(const std::string& varietyOption);  //variety
 }  // namespace Search
-//from Livebook begin
-#ifdef USE_LIVEBOOK
-size_t cURL_WriteFunc(void* contents, size_t size, size_t nmemb, std::string* s);
-#endif
-//from Livebook end
-Value static_value(const Eval::NNUE::Networks& networks,
-                   Position&                   pos,
-                   Search::Stack*              ss,
-                   int                         optimism);  //mcts
+
 }  // namespace Brainlearn
 
 #endif  // #ifndef SEARCH_H_INCLUDED

@@ -1,13 +1,13 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Brainlearn
-  Copyright (C) 2004-2025 The Brainlearn developers (see AUTHORS file)
+  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
 
-  Brainlearn is free software: you can redistribute it and/or modify
+  Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Brainlearn is distributed in the hope that it will be useful,
+  Stockfish is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -22,12 +22,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#include "history.h"
 #include "nnue/network.h"
 #include "numa.h"
 #include "position.h"
@@ -71,14 +73,9 @@ class Engine {
 
     void set_numa_config_from_option(const std::string& o);
     void resize_threads();
-    void init_bookMan(int bookIndex);  //book management
     void set_tt_size(size_t mb);
     void set_ponderhit(bool);
     void search_clear();
-#ifdef USE_LIVEBOOK
-    void setLiveBookURL(const std::string& newURL);
-    void setLiveBookTimeout(size_t newTimeoutMS);
-#endif
 
     void set_on_update_no_moves(std::function<void(const InfoShort&)>&&);
     void set_on_update_full(std::function<void(const InfoFull&)>&&);
@@ -100,33 +97,34 @@ class Engine {
 
     const OptionsMap& get_options() const;
     OptionsMap&       get_options();
-    BookManager       get_bookMan();  //book management
-    int               get_hashfull(int maxAge = 0) const;
 
-    std::string fen() const;
-    void        flip();
-    std::string visualize() const;
-    void        show_moves_bookMan(const Position& position);  //book management
+    int get_hashfull(int maxAge = 0) const;
+
+    std::string                            fen() const;
+    void                                   flip();
+    std::string                            visualize() const;
     std::vector<std::pair<size_t, size_t>> get_bound_thread_count_by_numa_node() const;
     std::string                            get_numa_config_as_string() const;
     std::string                            numa_config_information_as_string() const;
     std::string                            thread_allocation_information_as_string() const;
     std::string                            thread_binding_information_as_string() const;
-    Position                               pos;  //from learning
+
    private:
     const std::string binaryDirectory;
 
     NumaReplicationContext numaContext;
-    //from learning
+
+    Position     pos;
     StateListPtr states;
 
-    OptionsMap                               options;
-    ThreadPool                               threads;
-    TranspositionTable                       tt;
-    LazyNumaReplicated<Eval::NNUE::Networks> networks;
-    BookManager                              bookMan;  //book management
-    Search::SearchManager::UpdateContext     updateContext;
-    std::function<void(std::string_view)>    onVerifyNetworks;
+    OptionsMap                                         options;
+    ThreadPool                                         threads;
+    TranspositionTable                                 tt;
+    LazyNumaReplicatedSystemWide<Eval::NNUE::Networks> networks;
+
+    Search::SearchManager::UpdateContext  updateContext;
+    std::function<void(std::string_view)> onVerifyNetworks;
+    std::map<NumaIndex, SharedHistories>  sharedHists;
 };
 
 }  // namespace Brainlearn

@@ -12,11 +12,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-          path: Brainlearn
+          path: Stockfish
           persist-credentials: false
 
       - name: build debug enabled version of SF
-        working-directory: Brainlearn/src
+        working-directory: Stockfish/src
         run: make -j build debug=yes
 
       - name: Checkout fastchess repo
@@ -35,8 +35,8 @@ jobs:
         working-directory: fastchess
         run: |
           ./fastchess -rounds 4 -games 2 -repeat -concurrency 4 -openings file=app/tests/data/openings.epd format=epd order=random -srand $RANDOM\
-               -engine name=sf1 cmd=/home/runner/work/Brainlearn/Brainlearn/Brainlearn/src/brainlearn\
-               -engine name=sf2 cmd=/home/runner/work/Brainlearn/Brainlearn/Brainlearn/src/brainlearn\
+               -engine name=sf1 cmd=/home/runner/work/Stockfish/Stockfish/Stockfish/src/stockfish\
+               -engine name=sf2 cmd=/home/runner/work/Stockfish/Stockfish/Stockfish/src/stockfish\
                -ratinginterval 1 -report penta=true -each proto=uci tc=4+0.04 -log file=fast.log | tee fast.out
           cat fast.log
           ! grep "Assertion" fast.log > /dev/null
