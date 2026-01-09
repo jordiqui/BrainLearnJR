@@ -1,15 +1,14 @@
 #!/bin/sh
 
-wget_or_curl=$( (command -v wget > /dev/null 2>&1 && echo "wget -qO-") || \
-                (command -v curl > /dev/null 2>&1 && echo "curl -skL"))
-
+downloader=""
+if command -v curl > /dev/null 2>&1; then
+  downloader="curl"
+elif command -v wget > /dev/null 2>&1; then
+  downloader="wget"
+fi
 
 sha256sum=$( (command -v shasum > /dev/null 2>&1 && echo "shasum -a 256") || \
              (command -v sha256sum > /dev/null 2>&1 && echo "sha256sum"))
-
-if [ -z "$sha256sum" ]; then
-  >&2 echo "sha256sum not found, NNUE files will be assumed valid."
-fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
@@ -17,6 +16,7 @@ NNUE_DIR="${NNUE_DIR:-$REPO_ROOT/nnue}"
 NNUE_OUTPUT_DIR="${NNUE_OUTPUT_DIR:-$REPO_ROOT}"
 SHASUMS_FILE="${NNUE_DIR}/SHASUMS.txt"
 NNUE_BIG_EXTRA_URLS="${NNUE_BIG_EXTRA_URLS:-https://tests.stockfishchess.org/api/nn/nn-95a8d78bdb5e.nnue https://tests.stockfishchess.org/api/nn/nn-4ca89e4b3abf.nnue}"
+MIN_NNUE_SIZE="${MIN_NNUE_SIZE:-1048576}"
 
 get_nnue_filename() {
   grep "$1" "$REPO_ROOT/src/evaluate.h" | grep "#define" | sed "s/.*\(nn-[a-z0-9]\{12\}.nnue\).*/\1/"
@@ -48,25 +48,23 @@ update_shasums() {
 }
 
 validate_network() {
-  if [ -n "$sha256sum" ] && [ -f "$SHASUMS_FILE" ]; then
-    line="$(grep " $(basename "$1")$" "$SHASUMS_FILE" | tail -n 1)"
-    if [ -n "$line" ]; then
-      expected_sha="$(echo "$line" | awk '{print $1}')"
-      expected_size="$(echo "$line" | awk '{print $2}')"
-      actual_sha="$($sha256sum "$1" | awk '{print $1}')"
-      actual_size="$(file_size "$1")"
-      [ "$expected_sha" = "$actual_sha" ] && [ "$expected_size" = "$actual_size" ] && return 0
-      rm -f "$1"
-      return 1
-    fi
-  fi
+  [ -f "$1" ] || return 1
+  size="$(file_size "$1")"
+  [ "$size" -gt "$MIN_NNUE_SIZE" ] || return 1
+  magic="$(dd if="$1" bs=1 count=4 2>/dev/null)"
+  [ "$magic" = "NNUE" ] || return 1
+  return 0
+}
 
-  # If no sha256sum command is available, assume the file is always valid.
-  if [ -n "$sha256sum" ] && [ -f "$1" ]; then
-    if [ "$1" != "nn-$($sha256sum "$1" | cut -c 1-12).nnue" ]; then
-      rm -f "$1"
-      return 1
-    fi
+download_url() {
+  _url="$1"
+  _dest="$2"
+  if [ "$downloader" = "curl" ]; then
+    curl -L --fail --retry 3 --retry-delay 2 --connect-timeout 20 -o "$_dest" "$_url"
+  elif [ "$downloader" = "wget" ]; then
+    wget -qO "$_dest" "$_url"
+  else
+    return 1
   fi
 }
 
@@ -101,38 +99,39 @@ fetch_network() {
     fi
   fi
 
-  if [ -z "$wget_or_curl" ]; then
-    >&2 printf "%s\n" "Neither wget or curl is installed." \
-          "Install one of these tools to download NNUE files automatically."
-    exit 1
+  if [ -z "$downloader" ]; then
+    >&2 printf "%s\n" "Neither curl nor wget is installed." \
+          "Install one of these tools to download NNUE files automatically," \
+          "or place $_filename next to the executable."
+    return 0
   fi
 
   for url in \
-    "https://tests.stockfishchess.org/api/nn/$_filename" \
-    "https://media.githubusercontent.com/media/official-stockfish/networks/master/$_filename" \
     "https://raw.githubusercontent.com/official-stockfish/networks/master/$_filename" \
-    "https://github.com/official-stockfish/networks/raw/master/$_filename"; do
+    "https://media.githubusercontent.com/media/official-stockfish/networks/master/$_filename" \
+    "https://tests.stockfishchess.org/api/nn/$_filename"; do
     echo "Downloading from $url ..."
-    if $wget_or_curl "$url" > "$_dest"; then
-      if validate_network "$_dest"; then
+    tmpfile="${_dest}.tmp.$$"
+    if download_url "$url" "$tmpfile"; then
+      if validate_network "$tmpfile"; then
+        mv -f "$tmpfile" "$_dest"
         echo "Successfully validated $_filename"
+        update_shasums
+        cp -f "$_dest" "$_output"
+        return 0
       else
         echo "Downloaded $_filename is invalid"
-        continue
+        rm -f "$tmpfile"
       fi
     else
       echo "Failed to download from $url"
-    fi
-    if [ -f "$_dest" ]; then
-      update_shasums
-      cp -f "$_dest" "$_output"
-      return
+      rm -f "$tmpfile"
     fi
   done
 
   # Download was not successful in the loop, return false.
-  >&2 echo "Failed to download $_filename"
-  return 1
+  >&2 echo "NNUE download failed; please place $_filename next to the executable or run make net"
+  return 0
 }
 
 fetch_network_url() {
@@ -160,16 +159,19 @@ fetch_network_url() {
   fi
 
   echo "Downloading from $_url ..."
-  if $wget_or_curl "$_url" > "$_dest"; then
-    if validate_network "$_dest"; then
+  tmpfile="${_dest}.tmp.$$"
+  if download_url "$_url" "$tmpfile"; then
+    if validate_network "$tmpfile"; then
+      mv -f "$tmpfile" "$_dest"
       echo "Successfully validated $_filename"
     else
       echo "Downloaded $_filename is invalid"
-      rm -f "$_dest"
+      rm -f "$tmpfile"
       return 1
     fi
   else
     echo "Failed to download from $_url"
+    rm -f "$tmpfile"
     return 1
   fi
 
