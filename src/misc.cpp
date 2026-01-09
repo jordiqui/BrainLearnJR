@@ -25,7 +25,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
-#include <iomanip>
 #include <iostream>
 #include <iterator>
 #include <limits>
@@ -39,8 +38,23 @@ namespace Brainlearn {
 
 namespace {
 
-// Version number or dev.
-constexpr std::string_view version = "31";
+constexpr std::string_view engine_name = "BrainlearnJR-090126";
+
+std::string_view arch_suffix() {
+#if defined(USE_AVX512)
+    return "-avx512";
+#elif defined(USE_PEXT)
+    return "-bmi2";
+#elif defined(USE_AVX2)
+    return "-avx2";
+#elif defined(__FMA__)
+    return "-FMA3";
+#elif defined(USE_SSE41) && defined(USE_POPCNT)
+    return "-sse41popcnt";
+#else
+    return "";
+#endif
+}
 
 // Our fancy logging facility. The trick here is to replace cin.rdbuf() and
 // cout.rdbuf() with two Tie objects that tie cin and cout to a file stream. We
@@ -114,44 +128,11 @@ class Logger {
 
 
 // Returns the full name of the current Brainlearn version.
-//
-// For local dev compiles we try to append the commit SHA and
-// commit date from git. If that fails only the local compilation
-// date is set and "nogit" is specified:
-//      Brainlearn dev-YYYYMMDD-SHA
-//      or
-//      Brainlearn dev-YYYYMMDD-nogit
-//
-// For releases (non-dev builds) we only include the version number:
-//      Brainlearn version
+// The base name is rebranded and we append a suffix based on the
+// compiled instruction set to help GUIs distinguish binaries.
 std::string engine_version_info() {
     std::stringstream ss;
-    ss << "Brainlearn " << version << std::setfill('0');
-
-    if constexpr (version == "dev")
-    {
-        ss << "-";
-#ifdef GIT_DATE
-        ss << stringify(GIT_DATE);
-#else
-        constexpr std::string_view months("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec");
-
-        std::string       month, day, year;
-        std::stringstream date(__DATE__);  // From compiler, format is "Sep 21 2008"
-
-        date >> month >> day >> year;
-        ss << year << std::setw(2) << std::setfill('0') << (1 + months.find(month) / 4)
-           << std::setw(2) << std::setfill('0') << day;
-#endif
-
-        ss << "-";
-
-#ifdef GIT_SHA
-        ss << stringify(GIT_SHA);
-#else
-        ss << "nogit";
-#endif
-    }
+    ss << engine_name << arch_suffix();
 
     return ss.str();
 }
