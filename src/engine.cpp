@@ -1,13 +1,13 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Brainlearn
-  Copyright (C) 2004-2025 The Brainlearn developers (see AUTHORS file)
+  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
 
-  Brainlearn is free software: you can redistribute it and/or modify
+  Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Brainlearn is distributed in the hope that it will be useful,
+  Stockfish is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -33,18 +33,17 @@
 #include "misc.h"
 #include "nnue/network.h"
 #include "nnue/nnue_common.h"
+#include "nnue/nnue_misc.h"
 #include "numa.h"
 #include "perft.h"
 #include "position.h"
 #include "search.h"
+#include "shm.h"
 #include "syzygy/tbprobe.h"
 #include "types.h"
 #include "uci.h"
 #include "ucioption.h"
-#include "wdl/win_probability.h"  //from ShashChess
-#include "learn/learn.h"          //learning
-#include "book/book.h"            //book management
-#include "mcts/montecarlo.h"      //mcts
+
 namespace Brainlearn {
 
 namespace NN = Eval::NNUE;
@@ -54,18 +53,16 @@ constexpr int  MaxHashMB  = Is64Bit ? 33554432 : 2048;
 int            MaxThreads = std::max(1024, 4 * int(get_hardware_concurrency()));
 
 Engine::Engine(std::optional<std::string> path) :
-    binaryDirectory(CommandLine::get_binary_directory(
-      path.value_or(""), CommandLine::get_working_directory())),  //learning
+    binaryDirectory(path ? CommandLine::get_binary_directory(*path) : ""),
     numaContext(NumaConfig::from_system()),
     states(new std::deque<StateInfo>(1)),
     threads(),
-    networks(
-      numaContext,
-      NN::Networks(
-        NN::NetworkBig({EvalFileDefaultNameBig, "None", ""}, NN::EmbeddedNNUEType::BIG),
-        NN::NetworkSmall({EvalFileDefaultNameSmall, "None", ""}, NN::EmbeddedNNUEType::SMALL))) {
-    pos.set(StartFEN, false, &states->back());
+    networks(numaContext,
+             // Heap-allocate because sizeof(NN::Networks) is large
+             std::make_unique<NN::Networks>(NN::EvalFile{EvalFileDefaultNameBig, "None", ""},
+                                            NN::EvalFile{EvalFileDefaultNameSmall, "None", ""})) {
 
+    pos.set(StartFEN, false, &states->back());
 
     options.add(  //
       "Debug Log File", Option("", [](const Option& o) {
@@ -108,10 +105,6 @@ Engine::Engine(std::optional<std::string> path) :
 
     options.add("Move Overhead", Option(10, 0, 5000));
 
-    options.add("Minimum Thinking Time", Option(100, 0, 5000));
-
-    options.add("Slow Mover", Option(100, 10, 1000));
-
     options.add("nodestime", Option(0, 0, 10000));
 
     options.add("UCI_Chess960", Option(false));
@@ -122,23 +115,7 @@ Engine::Engine(std::optional<std::string> path) :
                 Option(Brainlearn::Search::Skill::LowestElo, Brainlearn::Search::Skill::LowestElo,
                        Brainlearn::Search::Skill::HighestElo));
 
-    options.add("UCI_ShowWDL", Option(true));
-
-    // Book management
-    for (int i = 0; i < BookManager::NumberOfBooks; ++i)
-    {
-        options.add(Util::format_string("CTG/BIN Book %d File", i + 1),
-                    Option(EMPTY, [this, i](const Option&) {
-                        init_bookMan(i);
-                        return std::nullopt;
-                    }));
-
-        options.add(Util::format_string("Book %d Width", i + 1), Option(1, 1, 20));
-
-        options.add(Util::format_string("Book %d Depth", i + 1), Option(255, 1, 255));
-
-        options.add(Util::format_string("(CTG) Book %d Only Green", i + 1), Option(true));
-    }
+    options.add("UCI_ShowWDL", Option(false));
 
     options.add(  //
       "SyzygyPath", Option("", [](const Option& o) {
@@ -164,102 +141,6 @@ Engine::Engine(std::optional<std::string> path) :
           return std::nullopt;
       }));
 
-    // From learning
-    options.add("Read only learning", Option(false, [](const Option& o) {
-                    LD.set_readonly(o);
-                    return std::nullopt;
-                }));
-
-    options.add("Self Q-learning", Option(false, [this](const Option& o) {
-                    LD.set_learning_mode(get_options(), (bool) o ? "Self" : "Standard");
-                    return std::nullopt;
-                }));
-
-    options.add("Experience Book", Option(false, [this](const Option&) {
-                    LD.init(get_options());
-                    return std::nullopt;
-                }));
-
-    options.add("Experience Book Max Moves", Option(100, 1, 100));
-
-    options.add("Experience Book Min Depth", Option(4, 1, 255));
-
-    // From MCTS
-    options.add("MCTS", Option(false));
-
-    options.add("MCTSThreads", Option(1, 1, 512));
-
-    options.add("MCTS Multi Strategy", Option(20, 0, 100));
-
-    options.add("MCTS Multi MinVisits", Option(5, 0, 1000));
-
-    // LiveBook options
-#ifdef USE_LIVEBOOK
-    options.add("LiveBook Proxy Url", Option("", [](const Option& o) -> std::optional<std::string> {
-                    Search::set_proxy_url(o);
-                    return std::optional<std::string>{};
-                }));
-
-    options.add("LiveBook Lichess Games", Option(false, [](const Option& o) {
-                    Search::set_use_lichess_games(o);
-                    return std::nullopt;
-                }));
-
-    options.add("LiveBook Lichess Masters", Option(false, [](const Option& o) {
-                    Search::set_use_lichess_masters(o);
-                    return std::nullopt;
-                }));
-
-    options.add("LiveBook Lichess Player",
-                Option("", [](const Option& o) -> std::optional<std::string> {
-                    Search::set_lichess_player(o);
-                    return std::optional<std::string>{};
-                }));
-
-    options.add("LiveBook Lichess Player Color",
-                Option("White var Both var White var Black", "White",
-                       [](const Option& o) -> std::optional<std::string> {
-                           std::string str = o;
-                           std::transform(str.begin(), str.end(), str.begin(),
-                                          [](const unsigned char c) { return std::tolower(c); });
-                           Search::set_lichess_player_color(str);
-                           return std::optional<std::string>{};
-                       }));
-
-    options.add("LiveBook ChessDB", Option(false, [](const Option& o) {
-                    Search::set_use_chess_db(o);
-                    return std::nullopt;
-                }));
-
-    options.add("LiveBook Depth", Option(255, 1, 255, [](const Option& o) {
-                    Search::set_livebook_depth(o);
-                    return std::nullopt;
-                }));
-
-    options.add("ChessDB Tablebase", Option(false, [](const Option& o) {
-                    Search::set_use_chess_db_tablebase(o);
-                    return std::nullopt;
-                }));
-
-    options.add("Lichess Tablebase", Option(false, [](const Option& o) {
-                    Search::set_use_lichess_tablebase(o);
-                    return std::nullopt;
-                }));
-
-    options.add("ChessDB Contribute", Option(false, [](const Option& o) {
-                    Search::set_chess_db_contribute(o);
-                    return std::nullopt;
-                }));
-#endif
-
-    options.add("Variety", Option("Off var Off var Standard var Psychological", "Off",
-                                  [](const Option& o) -> std::optional<std::string> {
-                                      Search::set_variety(o);
-                                      return std::optional<std::string>{};
-                                  }));
-
-    options.add("Concurrent Experience", Option(false));
-
     load_networks();
     resize_threads();
 }
@@ -281,7 +162,6 @@ void Engine::stop() { threads.stop = true; }
 void Engine::search_clear() {
     wait_for_search_finished();
 
-    MCTS.clear();  //mcts
     tt.clear(threads);
     threads.clear();
 
@@ -322,19 +202,7 @@ void Engine::set_position(const std::string& fen, const std::vector<std::string>
 
         if (m == Move::none())
             break;
-        //learning begin
-        if (LD.is_enabled() && LD.learning_mode() != LearningMode::Self && !LD.is_paused())
-        {
-            PersistedLearningMove persistedLearningMove;
 
-            persistedLearningMove.key                      = pos.key();
-            persistedLearningMove.learningMove.depth       = 0;
-            persistedLearningMove.learningMove.move        = m;
-            persistedLearningMove.learningMove.score       = VALUE_NONE;
-            persistedLearningMove.learningMove.performance = WDLModel::get_win_probability(0, pos);
-            LD.add_new_learning(persistedLearningMove.key, persistedLearningMove.learningMove);
-        }
-        //learning end
         states->emplace_back();
         pos.do_move(m, states->back());
     }
@@ -368,14 +236,13 @@ void Engine::set_numa_config_from_option(const std::string& o) {
 
 void Engine::resize_threads() {
     threads.wait_for_search_finished();
-    threads.set(numaContext.get_numa_config(), {bookMan, options, threads, tt, networks},
-                updateContext);  //book management
+    threads.set(numaContext.get_numa_config(), {options, threads, tt, sharedHists, networks},
+                updateContext);
 
     // Reallocate the hash with the new threadpool size
     set_tt_size(options["Hash"]);
     threads.ensure_network_replicated();
 }
-void Engine::init_bookMan(int bookIndex) { bookMan.init(bookIndex, options); }  //book management
 
 void Engine::set_tt_size(size_t mb) {
     wait_for_search_finished();
@@ -389,6 +256,36 @@ void Engine::set_ponderhit(bool b) { threads.main_manager()->ponder = b; }
 void Engine::verify_networks() const {
     networks->big.verify(options["EvalFile"], onVerifyNetworks);
     networks->small.verify(options["EvalFileSmall"], onVerifyNetworks);
+
+    auto statuses = networks.get_status_and_errors();
+    for (size_t i = 0; i < statuses.size(); ++i)
+    {
+        const auto [status, error] = statuses[i];
+        std::string message        = "Network replica " + std::to_string(i + 1) + ": ";
+        if (status == SystemWideSharedConstantAllocationStatus::NoAllocation)
+        {
+            message += "No allocation.";
+        }
+        else if (status == SystemWideSharedConstantAllocationStatus::LocalMemory)
+        {
+            message += "Local memory.";
+        }
+        else if (status == SystemWideSharedConstantAllocationStatus::SharedMemory)
+        {
+            message += "Shared memory.";
+        }
+        else
+        {
+            message += "Unknown status.";
+        }
+
+        if (error.has_value())
+        {
+            message += " " + *error;
+        }
+
+        onVerifyNetworks(message);
+    }
 }
 
 void Engine::load_networks() {
@@ -439,9 +336,7 @@ OptionsMap&       Engine::get_options() { return options; }
 std::string Engine::fen() const { return pos.fen(); }
 
 void Engine::flip() { pos.flip(); }
-void Engine::show_moves_bookMan(const Position& position) {
-    bookMan.show_moves(position, options);
-}  //book management
+
 std::string Engine::visualize() const {
     std::stringstream ss;
     ss << pos;
@@ -506,5 +401,4 @@ std::string Engine::thread_allocation_information_as_string() const {
 
     return ss.str();
 }
-
 }

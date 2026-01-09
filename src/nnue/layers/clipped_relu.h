@@ -1,13 +1,13 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2025 The Brainlearn developers (see AUTHORS file)
+  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
 
-  Brainlearn is free software: you can redistribute it and/or modify
+  Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Brainlearn is distributed in the hope that it will be useful,
+  Stockfish is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -57,6 +57,12 @@ class ClippedReLU {
 
     // Write network parameters
     bool write_parameters(std::ostream&) const { return true; }
+
+    std::size_t get_content_hash() const {
+        std::size_t h = 0;
+        hash_combine(h, get_hash_value(0));
+        return h;
+    }
 
     // Forward propagation
     void propagate(const InputType* input, OutputType* output) const {
