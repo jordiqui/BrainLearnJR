@@ -1,13 +1,13 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Brainlearn
-  Copyright (C) 2004-2025 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
+  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
 
-  Brainlearn is free software: you can redistribute it and/or modify
+  Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Brainlearn is distributed in the hope that it will be useful,
+  Stockfish is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -23,30 +23,18 @@
 #include <array>
 #include <cassert>
 #include <chrono>
-#include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <exception>  // IWYU pragma: keep
+// IWYU pragma: no_include <__exception/terminate.h>
+#include <functional>
 #include <iosfwd>
 #include <optional>
+#include <cstring>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
-//BrainLearn specific begin
-#include "types.h"
-#include <iostream>
-#ifndef _WIN32
-    #include <fcntl.h>
-    #include <unistd.h>
-    #include <sys/mman.h>
-    #include <sys/stat.h>
-#else
-    #define WIN32_LEAN_AND_MEAN
-    #ifndef NOMINMAX
-        #define NOMINMAX  // Disable macros min() and max()
-    #endif
-    #include <windows.h>
-#endif
-//Brainlearn specific end
 
 #define stringify2(x) #x
 #define stringify(x) stringify2(x)
@@ -146,10 +134,21 @@ class ValueList {
 
    public:
     std::size_t size() const { return size_; }
-    void        push_back(const T& value) { values_[size_++] = value; }
-    const T*    begin() const { return values_; }
-    const T*    end() const { return values_ + size_; }
-    const T&    operator[](int index) const { return values_[index]; }
+    int         ssize() const { return int(size_); }
+    void        push_back(const T& value) {
+        assert(size_ < MaxSize);
+        values_[size_++] = value;
+    }
+    const T* begin() const { return values_; }
+    const T* end() const { return values_ + size_; }
+    const T& operator[](int index) const { return values_[index]; }
+
+    T* make_space(size_t count) {
+        T* result = &values_[size_];
+        size_ += count;
+        assert(size_ <= MaxSize);
+        return result;
+    }
 
    private:
     T           values_[MaxSize];
@@ -307,18 +306,105 @@ inline uint64_t mul_hi64(uint64_t a, uint64_t b) {
 }
 
 
+template<typename T>
+inline void hash_combine(std::size_t& seed, const T& v) {
+    std::hash<T> hasher;
+    seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+template<>
+inline void hash_combine(std::size_t& seed, const std::size_t& v) {
+    seed ^= v + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+template<typename T>
+inline std::size_t get_raw_data_hash(const T& value) {
+    return std::hash<std::string_view>{}(
+      std::string_view(reinterpret_cast<const char*>(&value), sizeof(value)));
+}
+
+template<std::size_t Capacity>
+class FixedString {
+   public:
+    FixedString() :
+        length_(0) {
+        data_[0] = '\0';
+    }
+
+    FixedString(const char* str) {
+        size_t len = std::strlen(str);
+        if (len > Capacity)
+            std::terminate();
+        std::memcpy(data_, str, len);
+        length_        = len;
+        data_[length_] = '\0';
+    }
+
+    FixedString(const std::string& str) {
+        if (str.size() > Capacity)
+            std::terminate();
+        std::memcpy(data_, str.data(), str.size());
+        length_        = str.size();
+        data_[length_] = '\0';
+    }
+
+    std::size_t size() const { return length_; }
+    std::size_t capacity() const { return Capacity; }
+
+    const char* c_str() const { return data_; }
+    const char* data() const { return data_; }
+
+    char& operator[](std::size_t i) { return data_[i]; }
+
+    const char& operator[](std::size_t i) const { return data_[i]; }
+
+    FixedString& operator+=(const char* str) {
+        size_t len = std::strlen(str);
+        if (length_ + len > Capacity)
+            std::terminate();
+        std::memcpy(data_ + length_, str, len);
+        length_ += len;
+        data_[length_] = '\0';
+        return *this;
+    }
+
+    FixedString& operator+=(const FixedString& other) { return (*this += other.c_str()); }
+
+    operator std::string() const { return std::string(data_, length_); }
+
+    operator std::string_view() const { return std::string_view(data_, length_); }
+
+    template<typename T>
+    bool operator==(const T& other) const noexcept {
+        return (std::string_view) (*this) == other;
+    }
+
+    template<typename T>
+    bool operator!=(const T& other) const noexcept {
+        return (std::string_view) (*this) != other;
+    }
+
+    void clear() {
+        length_  = 0;
+        data_[0] = '\0';
+    }
+
+   private:
+    char        data_[Capacity + 1];  // +1 for null terminator
+    std::size_t length_;
+};
+
 struct CommandLine {
    public:
-    CommandLine(int, char**);  //from learning
+    CommandLine(int _argc, char** _argv) :
+        argc(_argc),
+        argv(_argv) {}
+
+    static std::string get_binary_directory(std::string argv0);
+    static std::string get_working_directory();
 
     int    argc;
     char** argv;
-    //from learning begin
-    std::string        binaryDirectory;   // path of the executable directory
-    std::string        workingDirectory;  // path of the working directory
-    static std::string get_working_directory();
-    static std::string get_binary_directory(std::string argv0, std::string workingDirectory);
-    //from learning end
 };
 
 namespace Utility {
@@ -333,6 +419,15 @@ void move_to_front(std::vector<T>& vec, Predicate pred) {
     }
 }
 }
+
+#if defined(__GNUC__)
+    #define sf_always_inline __attribute__((always_inline))
+#elif defined(_MSC_VER)
+    #define sf_always_inline __forceinline
+#else
+    // do nothing for other compilers
+    #define sf_always_inline
+#endif
 
 #if defined(__GNUC__) && !defined(__clang__)
     #if __GNUC__ >= 13
@@ -350,37 +445,13 @@ void move_to_front(std::vector<T>& vec, Predicate pred) {
     #define sf_assume(cond)
 #endif
 
-//begin from learning
-#define EMPTY "<empty>"
-
-class Util {
-   private:
-#if defined(_WIN32) || defined(_WIN64)
-    static constexpr char DirectorySeparator        = '\\';
-    static constexpr char ReverseDirectorySeparator = '/';
-#else
-    static constexpr char DirectorySeparator        = '/';
-    static constexpr char ReverseDirectorySeparator = '\\';
-#endif
-    static CommandLine* cli;
-
-   public:
-    static void        init(CommandLine* _cli);
-    static std::string unquote(const std::string& s);
-    static bool        is_empty_filename(const std::string& f);
-    static std::string fix_path(const std::string& p);
-    static std::string combine_path(const std::string& p1, const std::string& p2);
-    static std::string map_path(const std::string& p);
-
-    static size_t get_file_size(const std::string& f);
-    static bool   is_same_file(const std::string& f1, const std::string& f2);
-
-    static std::string format_bytes(uint64_t bytes, int decimals);
-
-    static std::string format_string(const char* const fmt, ...);
-};
-//end from learning
-
 }  // namespace Brainlearn
+
+template<std::size_t N>
+struct std::hash<Brainlearn::FixedString<N>> {
+    std::size_t operator()(const Brainlearn::FixedString<N>& fstr) const noexcept {
+        return std::hash<std::string_view>{}((std::string_view) fstr);
+    }
+};
 
 #endif  // #ifndef MISC_H_INCLUDED

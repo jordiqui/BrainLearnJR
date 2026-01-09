@@ -1,13 +1,13 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Brainlearn
-  Copyright (C) 2004-2025 A.Manzo, F.Ferraguti, K.Kiniama and Brainlearn developers (see AUTHORS file)
+  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
 
-  Brainlearn is free software: you can redistribute it and/or modify
+  Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Brainlearn is distributed in the hope that it will be useful,
+  Stockfish is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -40,6 +40,7 @@
     #include <cstddef>
     #include <cstdint>
     #include <type_traits>
+    #include "misc.h"
 
     #if defined(_MSC_VER)
         // Disable some silly and noisy warnings from MSVC compiler
@@ -60,12 +61,12 @@
 // Enforce minimum GCC version
     #if defined(__GNUC__) && !defined(__clang__) \
       && (__GNUC__ < 9 || (__GNUC__ == 9 && __GNUC_MINOR__ < 3))
-        #error "Brainlearn requires GCC 9.3 or later for correct compilation"
+        #error "Stockfish requires GCC 9.3 or later for correct compilation"
     #endif
 
     // Enforce minimum Clang version
     #if defined(__clang__) && (__clang_major__ < 10)
-        #error "Brainlearn requires Clang 10.0 or later for correct compilation"
+        #error "Stockfish requires Clang 10.0 or later for correct compilation"
     #endif
 
     #define ASSERT_ALIGNED(ptr, alignment) assert(reinterpret_cast<uintptr_t>(ptr) % alignment == 0)
@@ -121,8 +122,6 @@ enum Color : int8_t {
     BLACK,
     COLOR_NB = 2
 };
-//learning begin
-constexpr Color Colors[2] = {WHITE, BLACK};
 
 enum CastlingRights : int8_t {
     NO_CASTLING,
@@ -139,7 +138,6 @@ enum CastlingRights : int8_t {
 
     CASTLING_RIGHT_NB = 16
 };
-//learning end
 
 enum Bound : int8_t {
     BOUND_NONE,
@@ -153,11 +151,10 @@ enum Bound : int8_t {
 // to be in the range (-VALUE_NONE, VALUE_NONE] and should not exceed this range.
 using Value = int;
 
-constexpr Value VALUE_ZERO      = 0;
-constexpr Value VALUE_DRAW      = 0;
-constexpr Value VALUE_KNOWN_WIN = 10000;  //mcts
-constexpr Value VALUE_NONE      = 32002;
-constexpr Value VALUE_INFINITE  = 32001;
+constexpr Value VALUE_ZERO     = 0;
+constexpr Value VALUE_DRAW     = 0;
+constexpr Value VALUE_NONE     = 32002;
+constexpr Value VALUE_INFINITE = 32001;
 
 constexpr Value VALUE_MATE             = 32000;
 constexpr Value VALUE_MATE_IN_MAX_PLY  = VALUE_MATE - MAX_PLY;
@@ -190,14 +187,7 @@ constexpr Value KnightValue = 781;
 constexpr Value BishopValue = 825;
 constexpr Value RookValue   = 1276;
 constexpr Value QueenValue  = 2538;
-//from mcts begin
-//constexpr Value HIGH_MCTS        =454;
-//constexpr Value HIGH_MIDDLE_MCTS =400;
-constexpr Value MIDDLE_MCTS = 378;
-//constexpr Value MIDDLE_LOW_MCTS  =336;
-//constexpr Value LOW_MCTS         =310,
-//constexpr Value MIN_MCTS         =25;
-//from mcts end
+
 
 // clang-format off
 enum PieceType : std::int8_t {
@@ -299,6 +289,49 @@ struct DirtyPiece {
     // castling uses add_sq and remove_sq to remove and add the rook
     Square remove_sq, add_sq;
     Piece  remove_pc, add_pc;
+};
+
+// Keep track of what threats change on the board (used by NNUE)
+struct DirtyThreat {
+    static constexpr int PcSqOffset         = 0;
+    static constexpr int ThreatenedSqOffset = 8;
+    static constexpr int ThreatenedPcOffset = 16;
+    static constexpr int PcOffset           = 20;
+
+    DirtyThreat() { /* don't initialize data */ }
+    DirtyThreat(uint32_t raw) :
+        data(raw) {}
+    DirtyThreat(Piece pc, Piece threatened_pc, Square pc_sq, Square threatened_sq, bool add) {
+        data = (uint32_t(add) << 31) | (pc << PcOffset) | (threatened_pc << ThreatenedPcOffset)
+             | (threatened_sq << ThreatenedSqOffset) | (pc_sq << PcSqOffset);
+    }
+
+    Piece  pc() const { return static_cast<Piece>(data >> PcOffset & 0xf); }
+    Piece  threatened_pc() const { return static_cast<Piece>(data >> ThreatenedPcOffset & 0xf); }
+    Square threatened_sq() const { return static_cast<Square>(data >> ThreatenedSqOffset & 0xff); }
+    Square pc_sq() const { return static_cast<Square>(data >> PcSqOffset & 0xff); }
+    bool   add() const { return data >> 31; }
+    uint32_t raw() const { return data; }
+
+   private:
+    uint32_t data;
+};
+
+// A piece can be involved in at most 8 outgoing attacks and 16 incoming attacks.
+// Moving a piece also can reveal at most 8 discovered attacks.
+// This implies that a non-castling move can change at most (8 + 16) * 3 + 8 = 80 features.
+// By similar logic, a castling move can change at most (5 + 1 + 3 + 9) * 2 = 36 features.
+// Thus, 80 should work as an upper bound. Finally, 16 entries are added to accommodate
+// unmasked vector stores near the end of the list.
+
+using DirtyThreatList = ValueList<DirtyThreat, 96>;
+
+struct DirtyThreats {
+    DirtyThreatList list;
+    Color           us;
+    Square          prevKsq, ksq;
+
+    Bitboard threatenedSqs, threateningSqs;
 };
 
     #define ENABLE_INCR_OPERATORS_ON(T) \
@@ -415,8 +448,6 @@ class Move {
         assert(is_ok());
         return Square(data & 0x3F);
     }
-
-    constexpr int from_to() const { return data & 0xFFF; }
 
     constexpr MoveType type_of() const { return MoveType(data & (3 << 14)); }
 

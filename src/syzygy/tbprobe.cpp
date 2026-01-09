@@ -1,13 +1,13 @@
 /*
-  Brainlearn, a UCI chess playing engine derived from Brainlearn
-  Copyright (C) 2004-2025 The Brainlearn developers (see AUTHORS file)
+  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
 
-  Brainlearn is free software: you can redistribute it and/or modify
+  Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Brainlearn is distributed in the hope that it will be useful,
+  Stockfish is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -35,6 +35,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <array>
 
 #include "../bitboard.h"
 #include "../misc.h"
@@ -584,7 +585,7 @@ int decompress_pairs(PairsData* d, uint64_t idx) {
     //       idx = k * d->span + idx % d->span    (2)
     //
     // So from (1) and (2) we can compute idx - I(K):
-    int diff = idx % d->span - d->span / 2;
+    int diff = int(idx % d->span - d->span / 2);
 
     // Sum the above to offset to find the offset corresponding to our idx
     offset += diff;
@@ -1092,7 +1093,7 @@ uint8_t* set_sizes(PairsData* d, uint8_t* data) {
     // See https://web.archive.org/web/20201106232444/http://www.larsson.dogma.net/dcc99.pdf
     std::vector<bool> visited(d->symlen.size());
 
-    for (std::size_t sym = 0; sym < d->symlen.size(); ++sym)
+    for (Sym sym = 0; sym < d->symlen.size(); ++sym)
         if (!visited[sym])
             d->symlen[sym] = set_symlen(d, sym, visited);
 
@@ -1214,6 +1215,8 @@ template<TBType Type>
 void* mapped(TBTable<Type>& e, const Position& pos) {
 
     static std::mutex mutex;
+    // Because TB is the only usage of materialKey, check it here in debug mode
+    assert(pos.material_key_is_ok());
 
     // Use 'acquire' to avoid a thread reading 'ready' == true while
     // another is still working. (compiler reordering may cause this).
@@ -1592,10 +1595,11 @@ int Tablebases::probe_dtz(Position& pos, ProbeState* result) {
 // Use the DTZ tables to rank root moves.
 //
 // A return value false indicates that not all probes were successful.
-bool Tablebases::root_probe(Position&          pos,
-                            Search::RootMoves& rootMoves,
-                            bool               rule50,
-                            bool               rankDTZ) {
+bool Tablebases::root_probe(Position&                    pos,
+                            Search::RootMoves&           rootMoves,
+                            bool                         rule50,
+                            bool                         rankDTZ,
+                            const std::function<bool()>& time_abort) {
 
     ProbeState result = OK;
     StateInfo  st;
@@ -1640,7 +1644,7 @@ bool Tablebases::root_probe(Position&          pos,
 
         pos.undo_move(m.pv[0]);
 
-        if (result == FAIL)
+        if (time_abort() || result == FAIL)
             return false;
 
         // Better moves are ranked higher. Certain wins are ranked equally.
@@ -1705,10 +1709,11 @@ bool Tablebases::root_probe_wdl(Position& pos, Search::RootMoves& rootMoves, boo
     return true;
 }
 
-Config Tablebases::rank_root_moves(const OptionsMap&  options,
-                                   Position&          pos,
-                                   Search::RootMoves& rootMoves,
-                                   bool               rankDTZ) {
+Config Tablebases::rank_root_moves(const OptionsMap&            options,
+                                   Position&                    pos,
+                                   Search::RootMoves&           rootMoves,
+                                   bool                         rankDTZ,
+                                   const std::function<bool()>& time_abort) {
     Config config;
 
     if (rootMoves.empty())
@@ -1731,10 +1736,11 @@ Config Tablebases::rank_root_moves(const OptionsMap&  options,
 
     if (config.cardinality >= popcount(pos.pieces()) && !pos.can_castle(ANY_CASTLING))
     {
-        // Rank moves using DTZ tables
-        config.rootInTB = root_probe(pos, rootMoves, options["Syzygy50MoveRule"], rankDTZ);
+        // Rank moves using DTZ tables, bail out if time_abort flags zeitnot
+        config.rootInTB =
+          root_probe(pos, rootMoves, options["Syzygy50MoveRule"], rankDTZ, time_abort);
 
-        if (!config.rootInTB)
+        if (!config.rootInTB && !time_abort())
         {
             // DTZ tables are missing; try to rank moves using WDL tables
             dtz_available   = false;

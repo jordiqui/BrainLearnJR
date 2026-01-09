@@ -12,20 +12,17 @@ on:
 jobs:
   Artifacts:
     name: ${{ matrix.config.name }} ${{ matrix.binaries }}
-    runs-on: ${{ matrix.config.os }}
+    runs-on: ubuntu-latest
     env:
-      COMPCXX: ${{ matrix.config.compiler }}
-      COMP: ${{ matrix.config.comp }}
       EXT: ${{ matrix.config.ext }}
       NAME: ${{ matrix.config.simple_name }}
       BINARY: ${{ matrix.binaries }}
-      SDE: ${{ matrix.config.sde }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(inputs.matrix) }}
     defaults:
       run:
-        shell: ${{ matrix.config.shell }}
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,53 +34,46 @@ jobs:
           name: ${{ matrix.config.simple_name }} ${{ matrix.binaries }}
           path: ${{ matrix.config.simple_name }} ${{ matrix.binaries }}
 
-      - name: Setup msys and install required packages
-        if: runner.os == 'Windows'
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: ${{ matrix.config.msys_sys }}
-          install: mingw-w64-${{ matrix.config.msys_env }} make git zip
-
       - name: Create Package
         run: |
-          mkdir brainlearn
+          mkdir stockfish
 
       - name: Download wiki
         run: |
-          git clone https://github.com/official-brainlearn/Brainlearn.wiki.git wiki
+          git clone https://github.com/official-stockfish/Stockfish.wiki.git wiki
           rm -rf wiki/.git
-          mv wiki brainlearn/
+          mv wiki stockfish/
 
       - name: Copy files
         run: |
-          mv "${{ matrix.config.simple_name }} ${{ matrix.binaries }}" brainlearn-workflow
-          cd brainlearn-workflow
-          cp -r src ../brainlearn/
-          cp -r scripts ../brainlearn/
-          cp brainlearn-$NAME-$BINARY$EXT ../brainlearn/
-          cp "Top CPU Contributors.txt" ../brainlearn/
-          cp Copying.txt ../brainlearn/
-          cp AUTHORS ../brainlearn/
-          cp CITATION.cff ../brainlearn/
-          cp README.md ../brainlearn/
-          cp CONTRIBUTING.md ../brainlearn/
+          mv "${{ matrix.config.simple_name }} ${{ matrix.binaries }}" stockfish-workflow
+          cd stockfish-workflow
+          cp -r src ../stockfish/
+          cp -r scripts ../stockfish/
+          cp stockfish-$NAME-$BINARY$EXT ../stockfish/
+          cp "Top CPU Contributors.txt" ../stockfish/
+          cp Copying.txt ../stockfish/
+          cp AUTHORS ../stockfish/
+          cp CITATION.cff ../stockfish/
+          cp README.md ../stockfish/
+          cp CONTRIBUTING.md ../stockfish/
 
       - name: Create tar
-        if: runner.os != 'Windows'
+        if: ${{ !startsWith(matrix.config.os, 'windows') }}
         run: |
-          chmod +x ./brainlearn/brainlearn-$NAME-$BINARY$EXT
-          tar -cvf brainlearn-$NAME-$BINARY.tar brainlearn
+          chmod +x ./stockfish/stockfish-$NAME-$BINARY$EXT
+          tar -cvf stockfish-$NAME-$BINARY.tar stockfish
 
       - name: Create zip
-        if: runner.os == 'Windows'
+        if: ${{ startsWith(matrix.config.os, 'windows') }}
         run: |
-          zip -r brainlearn-$NAME-$BINARY.zip brainlearn
+          zip -r stockfish-$NAME-$BINARY.zip stockfish
 
       - name: Release
         if: startsWith(github.ref_name, 'sf_') && github.ref_type == 'tag'
         uses: softprops/action-gh-release@4634c16e79c963813287e889244c50009e7f0981
         with:
-          files: brainlearn-${{ matrix.config.simple_name }}-${{ matrix.binaries }}.${{ matrix.config.archive_ext }}
+          files: stockfish-${{ matrix.config.simple_name }}-${{ matrix.binaries }}.${{ matrix.config.archive_ext }}
           token: ${{ secrets.token }}
 
       - name: Get last commit sha
@@ -107,8 +97,8 @@ jobs:
         continue-on-error: true
         uses: softprops/action-gh-release@4634c16e79c963813287e889244c50009e7f0981
         with:
-          name: Brainlearn dev-${{ env.COMMIT_DATE }}-${{ env.COMMIT_SHA }}
-          tag_name: brainlearn-dev-${{ env.COMMIT_DATE }}-${{ env.COMMIT_SHA }}
+          name: Stockfish dev-${{ env.COMMIT_DATE }}-${{ env.COMMIT_SHA }}
+          tag_name: stockfish-dev-${{ env.COMMIT_DATE }}-${{ env.COMMIT_SHA }}
           prerelease: true
-          files: brainlearn-${{ matrix.config.simple_name }}-${{ matrix.binaries }}.${{ matrix.config.archive_ext }}
+          files: stockfish-${{ matrix.config.simple_name }}-${{ matrix.binaries }}.${{ matrix.config.archive_ext }}
           token: ${{ secrets.token }}
