@@ -86,7 +86,7 @@ HEADERS = benchmark.h bitboard.h evaluate.h misc.h movegen.h movepick.h history.
 
 OBJS = $(notdir $(SRCS:.cpp=.o))
 
-VPATH = syzygy:nnue:nnue/features
+VPATH = syzygy:nnue:nnue/features:learn
 
 ### ==========================================================================
 ### Section 2. High-level Configuration
