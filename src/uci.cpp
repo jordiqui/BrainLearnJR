@@ -31,6 +31,7 @@
 
 #include "benchmark.h"
 #include "engine.h"
+#include "learn/learn.h"
 #include "memory.h"
 #include "movegen.h"
 #include "position.h"
@@ -85,6 +86,21 @@ void UCIEngine::init_search_update_listeners() {
     engine.set_on_verify_networks([](const auto& s) { print_info_string(s); });
 }
 
+void UCIEngine::ensure_learning_initialized() {
+    if (learningInitialized)
+        return;
+
+    LD.init(engine.get_options());
+    learningInitialized = true;
+}
+
+void UCIEngine::persist_learning() {
+    if (!LD.is_enabled() || LD.is_readonly())
+        return;
+
+    LD.persist(engine.get_options());
+}
+
 void UCIEngine::loop() {
     std::string token, cmd;
 
@@ -114,6 +130,7 @@ void UCIEngine::loop() {
 
         else if (token == "uci")
         {
+            ensure_learning_initialized();
             sync_cout << "id name " << engine_info(true) << "\n"
                       << engine.get_options() << sync_endl;
 
@@ -132,9 +149,15 @@ void UCIEngine::loop() {
         else if (token == "position")
             position(is);
         else if (token == "ucinewgame")
+        {
+            persist_learning();
             engine.search_clear();
+        }
         else if (token == "isready")
+        {
+            ensure_learning_initialized();
             sync_cout << "readyok" << sync_endl;
+        }
 
         // Add custom non-UCI commands, mainly for debugging purposes.
         // These commands must not be used during a search!
@@ -174,6 +197,9 @@ void UCIEngine::loop() {
         else if (!token.empty() && token[0] != '#')
             sync_cout << "Unknown command: '" << cmd << "'. Type help for more information."
                       << sync_endl;
+
+        if (token == "quit")
+            persist_learning();
 
     } while (token != "quit" && cli.argc == 1);  // The command-line arguments are one-shot
 }
