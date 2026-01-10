@@ -419,6 +419,8 @@ void move_to_front(std::vector<T>& vec, Predicate pred) {
     }
 }
 
+}  // namespace Utility
+
 namespace Util {
 
 std::string format_string(const char* format, ...);
@@ -427,7 +429,6 @@ std::string map_path(const std::string& path);
 bool        is_empty_filename(std::string_view filename);
 bool        is_same_file(const std::string& path1, const std::string& path2);
 std::uint64_t get_file_size(const std::string& path);
-}
 }
 
 #if defined(__GNUC__)
