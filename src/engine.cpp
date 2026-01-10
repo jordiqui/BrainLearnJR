@@ -25,6 +25,7 @@
 #include <memory>
 #include <ostream>
 #include <sstream>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -105,6 +106,10 @@ Engine::Engine(std::optional<std::string> path) :
 
     options.add("Move Overhead", Option(10, 0, 5000));
 
+    options.add("Minimum Thinking Time", Option(100, 0, 5000));
+
+    options.add("Slow Mover", Option(100, 10, 1000));
+
     options.add("nodestime", Option(0, 0, 10000));
 
     options.add("UCI_Chess960", Option(false));
@@ -116,6 +121,16 @@ Engine::Engine(std::optional<std::string> path) :
                        Brainlearn::Search::Skill::HighestElo));
 
     options.add("UCI_ShowWDL", Option(false));
+
+    for (int i = 0; i < 2; ++i)
+    {
+        const std::string index = std::to_string(i + 1);
+
+        options.add("CTG/BIN Book " + index + " File", Option(""));
+        options.add("Book " + index + " Width", Option(1, 1, 20));
+        options.add("Book " + index + " Depth", Option(255, 1, 255));
+        options.add("(CTG) Book " + index + " Only Green", Option(true));
+    }
 
     options.add(  //
       "SyzygyPath", Option("", [](const Option& o) {
@@ -140,6 +155,50 @@ Engine::Engine(std::optional<std::string> path) :
           load_small_network(o);
           return std::nullopt;
       }));
+
+    options.add("Read only learning", Option(false));
+
+    options.add("Self Q-learning", Option(false));
+
+    options.add("Experience Book", Option(false));
+
+    options.add("Experience Book Max Moves", Option(100, 1, 100));
+
+    options.add("Experience Book Min Depth", Option(4, 1, 255));
+
+    options.add("MCTS", Option(false));
+
+    options.add("MCTSThreads", Option(1, 1, 512));
+
+    options.add("MCTS Multi Strategy", Option(20, 0, 100));
+
+    options.add("MCTS Multi MinVisits", Option(5, 0, 1000));
+
+    options.add("LiveBook Proxy Url", Option(""));
+
+    options.add("LiveBook Lichess Games", Option(false));
+
+    options.add("LiveBook Lichess Masters", Option(false));
+
+    options.add("LiveBook Lichess Player", Option(""));
+
+    options.add("LiveBook Lichess Player Color",
+                Option("White var Both var White var Black", "White"));
+
+    options.add("LiveBook ChessDB", Option(false));
+
+    options.add("LiveBook Depth", Option(255, 1, 255));
+
+    options.add("ChessDB Tablebase", Option(false));
+
+    options.add("Lichess Tablebase", Option(false));
+
+    options.add("ChessDB Contribute", Option(false));
+
+    options.add("Variety",
+                Option("Off var Off var Standard var Psychological", "Off"));
+
+    options.add("Concurrent Experience", Option(false));
 
     load_networks();
     resize_threads();
