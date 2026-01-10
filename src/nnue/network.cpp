@@ -78,6 +78,17 @@ EmbeddedNNUE get_embedded(EmbeddedNNUEType type) {
         return EmbeddedNNUE(gEmbeddedNNUESmallData, gEmbeddedNNUESmallEnd, gEmbeddedNNUESmallSize);
 }
 
+std::string join_path(const std::string& dir, const std::string& file) {
+    if (dir.empty())
+        return file;
+
+    const char last = dir.back();
+    if (last == '/' || last == '\\')
+        return dir + file;
+
+    return dir + "/" + file;
+}
+
 }
 
 
@@ -262,7 +273,7 @@ Network<Arch, Transformer>::trace_evaluate(const Position&                      
 template<typename Arch, typename Transformer>
 void Network<Arch, Transformer>::load_user_net(const std::string& dir,
                                                const std::string& evalfilePath) {
-    std::ifstream stream(dir + evalfilePath, std::ios::binary);
+    std::ifstream stream(join_path(dir, evalfilePath), std::ios::binary);
     auto          description = load(stream);
 
     if (description.has_value())
