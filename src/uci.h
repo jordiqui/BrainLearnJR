@@ -65,6 +65,8 @@ class UCIEngine {
     void          benchmark(std::istream& args);
     void          position(std::istringstream& is);
     void          setoption(std::istringstream& is);
+    void          ensure_learning_initialized();
+    void          persist_learning();
     std::uint64_t perft(const Search::LimitsType&);
 
     static void on_update_no_moves(const Engine::InfoShort& info);
@@ -73,6 +75,8 @@ class UCIEngine {
     static void on_bestmove(std::string_view bestmove, std::string_view ponder);
 
     void init_search_update_listeners();
+
+    bool learningInitialized = false;
 };
 
 }  // namespace Brainlearn

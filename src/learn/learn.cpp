@@ -22,6 +22,30 @@ LearningMode identify_learning_mode(const string& lm) {
 
     return LearningMode::Self;
 }
+
+bool file_exists(const std::string& filename) {
+    std::ifstream in(filename, std::ios::in | std::ios::binary);
+    return in.good();
+}
+
+void log_experience_status(const Brainlearn::OptionsMap& options,
+                           bool                          enabled,
+                           bool                          readOnly,
+                           const std::string&            path,
+                           bool                          loaded,
+                           bool                          saved) {
+    const std::string logPath = std::string(options["Debug Log File"]);
+    if (logPath.empty())
+        return;
+
+    std::ofstream log(logPath, std::ios::app);
+    if (!log)
+        return;
+
+    log << "Experience: enabled=" << (enabled ? "true" : "false")
+        << " readOnly=" << (readOnly ? "true" : "false") << " path=" << path
+        << " loaded=" << (loaded ? "yes" : "no") << " saved=" << (saved ? "yes" : "no") << "\n";
+}
 }
 
 bool LearningData::load(const string& filename) {
@@ -224,15 +248,17 @@ void LearningData::init(Brainlearn::OptionsMap& o) {
     clear();
     learningMode =
       identify_learning_mode(static_cast<bool>(options["Self Q-learning"]) ? "Self" : "Standard");
+    isReadOnly = static_cast<bool>(options["Read only learning"]);
 
-    load(Util::map_path("experience.exp"));
+    const std::string experiencePath = Util::map_path("experience.exp");
+    const bool        loadedMain     = load(experiencePath);
 
     vector<string> slaveFiles;
 
     //Just in case, check and load for "experience_new.exp" which will be present if
     //previous saving operation failed (engine crashed or terminated)
     string slaveFile = Util::map_path("experience_new.exp");
-    if (load("experience_new.exp"))
+    if (load(slaveFile))
         slaveFiles.push_back(slaveFile);
 
     //Load slave experience files (if any)
@@ -262,6 +288,7 @@ void LearningData::init(Brainlearn::OptionsMap& o) {
 
     // Clear the 'needPersisting' flag
     needPersisting = false;
+    log_experience_status(options, is_enabled(), isReadOnly, experiencePath, loadedMain, false);
 }
 
 void LearningData::quick_reset_exp() {
@@ -325,16 +352,6 @@ LearningMode LearningData::learning_mode() const { return learningMode; }
 
 void LearningData::persist(const Brainlearn::OptionsMap& o) {
     const OptionsMap& options = o;
-    //Quick exit if we have nothing to persist
-    if (HT.empty() || !needPersisting)
-        return;
-
-    if (isReadOnly)
-    {
-        //We should not be here if we are running in ReadOnly mode
-        assert(false);
-        return;
-    }
 
     /*
         To avoid any problems when saving to experience file, we will actually do the following:
@@ -374,6 +391,27 @@ void LearningData::persist(const Brainlearn::OptionsMap& o) {
         tempExperienceFilename = Util::map_path("experience_new.exp");
     }
 
+    if (isReadOnly)
+    {
+        log_experience_status(options, is_enabled(), isReadOnly, experienceFilename, false, false);
+        return;
+    }
+
+    const bool fileAlreadyExists = file_exists(experienceFilename);
+    if (HT.empty() || !needPersisting)
+    {
+        bool created = false;
+        if (!fileAlreadyExists)
+        {
+            ofstream outputFile(experienceFilename, ofstream::trunc | ofstream::binary);
+            created = outputFile.good();
+        }
+
+        log_experience_status(options, is_enabled(), isReadOnly, experienceFilename, fileAlreadyExists,
+                              created);
+        return;
+    }
+
     ofstream              outputFile(tempExperienceFilename, ofstream::trunc | ofstream::binary);
     PersistedLearningMove persistedLearningMove;
     for (auto& kvp : HT)
@@ -386,13 +424,19 @@ void LearningData::persist(const Brainlearn::OptionsMap& o) {
                              sizeof(persistedLearningMove));
         }
     }
+    const bool wroteFile = outputFile.good();
     outputFile.close();
 
-    remove(experienceFilename.c_str());
-    rename(tempExperienceFilename.c_str(), experienceFilename.c_str());
+    if (wroteFile)
+    {
+        remove(experienceFilename.c_str());
+        rename(tempExperienceFilename.c_str(), experienceFilename.c_str());
+        //Prevent persisting again without modifications
+        needPersisting = false;
+    }
 
-    //Prevent persisting again without modifications
-    needPersisting = false;
+    log_experience_status(options, is_enabled(), isReadOnly, experienceFilename, fileAlreadyExists,
+                          wroteFile);
 }
 
 void LearningData::pause() { isPaused = true; }
