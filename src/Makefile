@@ -836,24 +836,39 @@ ifeq ($(pext),yes)
 	endif
 endif
 
-### 3.8.1 Try to include git commit sha for versioning
+### 3.8 NNUE embedding options
+# Allow building without embedding NNUE files. This can be helpful in
+# restricted environments where the default networks cannot be downloaded.
+# Set NNUE_EMBEDDING_OFF to 'yes' (or '1', 'true', 'on') to disable embedding
+# and skip the automatic download step.
+NNUE_EMBEDDING_OFF ?= no
+
+ifneq ($(filter 1 yes true on,$(NNUE_EMBEDDING_OFF)),)
+	NNUE_EMBEDDING_OFF := yes
+	NNUE_TARGET :=
+	CXXFLAGS += -DNNUE_EMBEDDING_OFF
+else
+	NNUE_TARGET := net
+endif
+
+### 3.9.1 Try to include git commit sha for versioning
 GIT_SHA := $(shell git rev-parse HEAD 2>/dev/null | cut -c 1-8)
 ifneq ($(GIT_SHA), )
 	CXXFLAGS += -DGIT_SHA=$(GIT_SHA)
 endif
 
-### 3.8.2 Try to include git commit date for versioning
+### 3.9.2 Try to include git commit date for versioning
 GIT_DATE := $(shell git show -s --date=format:'%Y%m%d' --format=%cd HEAD 2>/dev/null)
 ifneq ($(GIT_DATE), )
 	CXXFLAGS += -DGIT_DATE=$(GIT_DATE)
 endif
 
-### 3.8.3 Try to include architecture
+### 3.9.3 Try to include architecture
 ifneq ($(ARCH), )
 	CXXFLAGS += -DARCH=$(ARCH)
 endif
 
-### 3.9 Link Time Optimization
+### 3.10 Link Time Optimization
 ### This is a mix of compile and link time options because the lto link phase
 ### needs access to the optimization flags.
 ifeq ($(optimize),yes)
@@ -890,7 +905,7 @@ endif
 endif
 endif
 
-### 3.10 Android 5 can only run position independent executables. Note that this
+### 3.11 Android 5 can only run position independent executables. Note that this
 ### breaks Android 4.0 and earlier.
 ifeq ($(OS), Android)
 	CXXFLAGS += -fPIE
@@ -913,6 +928,7 @@ help:
 	echo "profile-build           > standard build with profile-guided optimization" && \
 	echo "build                   > skip profile-guided optimization" && \
 	echo "net                     > Download the default nnue nets" && \
+	echo "\tUse NNUE_EMBEDDING_OFF=yes to skip embedding/downloading nets" && \
 	echo "strip                   > Strip executable" && \
 	echo "install                 > Install executable" && \
 	echo "clean                   > Clean up" && \
@@ -984,13 +1000,13 @@ endif
 	clang-profile-use clang-profile-make FORCE \
 	format analyze
 
-analyze: net config-sanity objclean
+analyze: $(NNUE_TARGET) config-sanity objclean
 	$(MAKE) -k ARCH=$(ARCH) COMP=$(COMP) $(OBJS)
 
-build: net config-sanity
+build: $(NNUE_TARGET) config-sanity
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) all
 
-profile-build: config-sanity objclean profileclean
+profile-build: $(NNUE_TARGET) config-sanity objclean profileclean
 ifeq ($(target_windows),yes)
 ifeq ($(strip $(RUN_PREFIX)),)
 	@echo "Warning: RUN_PREFIX is required to run Windows executables for PGO builds."
@@ -1060,7 +1076,7 @@ format:
 
 all: $(EXE) .depend
 
-config-sanity:
+config-sanity: $(NNUE_TARGET)
 	@echo ""
 	@echo "Config:" && \
 	echo "debug: '$(debug)'" && \
