@@ -18,6 +18,7 @@
 
 #include "network.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -89,6 +90,16 @@ std::string join_path(const std::string& dir, const std::string& file) {
     return dir + "/" + file;
 }
 
+bool has_path_separator(const std::string& path) {
+    if (path.find('/') != std::string::npos || path.find('\\') != std::string::npos)
+        return true;
+#ifdef _WIN32
+    if (path.size() > 1 && path[1] == ':')
+        return true;
+#endif
+    return false;
+}
+
 }
 
 
@@ -120,12 +131,26 @@ bool write_parameters(std::ostream& stream, const T& reference) {
 
 template<typename Arch, typename Transformer>
 void Network<Arch, Transformer>::load(const std::string& rootDirectory, std::string evalfilePath) {
+    std::vector<std::string> dirs;
+    auto                     add_dir = [&dirs](const std::string& dir) {
+        if (std::find(dirs.begin(), dirs.end(), dir) == dirs.end())
+            dirs.push_back(dir);
+    };
+
+    const std::string networksDir = "networks";
+    const std::string binaryNetworksDir = join_path(rootDirectory, networksDir);
+
+    if (has_path_separator(evalfilePath))
+        add_dir("");
+
+    add_dir(networksDir);
+    add_dir(binaryNetworksDir);
+    add_dir("");
+    add_dir(rootDirectory);
 #if defined(DEFAULT_NNUE_DIRECTORY)
-    std::vector<std::string> dirs = {"<internal>", "", rootDirectory,
-                                     stringify(DEFAULT_NNUE_DIRECTORY)};
-#else
-    std::vector<std::string> dirs = {"<internal>", "", rootDirectory};
+    add_dir(stringify(DEFAULT_NNUE_DIRECTORY));
 #endif
+    add_dir("<internal>");
 
     if (evalfilePath.empty())
         evalfilePath = evalFile.defaultName;

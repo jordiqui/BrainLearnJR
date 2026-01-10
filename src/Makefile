@@ -66,7 +66,8 @@ PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
 
 ### Built-in benchmark for pgo-builds
-PGOBENCH = $(RUN_PREFIX) ./$(EXE) bench
+PGOBENCH = printf "bench 1\nquit\n" | $(RUN_PREFIX) ./$(EXE)
+PGOBENCH_FALLBACK = printf "uci\nisready\nposition startpos\ngo depth 1\nquit\n" | $(RUN_PREFIX) ./$(EXE)
 
 ### Source and object files
 SRCS = benchmark.cpp bitboard.cpp evaluate.cpp main.cpp \
@@ -1021,11 +1022,11 @@ endif
 	@echo ""
 	@echo "Step 2/4. Running benchmark for pgo-build ..."
 	@$(PGOBENCH) > PGOBENCH.out 2>&1 || { \
-		echo "PGO benchmark failed; falling back to a minimal UCI run."; \
-		printf "uci\nisready\nposition startpos\ngo depth 1\nquit\n" | $(RUN_PREFIX) ./$(EXE) > PGOBENCH.out 2>&1; \
-	} || { \
-		tail -n 20 PGOBENCH.out; \
-		exit 1; \
+		echo "PGO bench command failed; using a minimal UCI run."; \
+		$(PGOBENCH_FALLBACK) > PGOBENCH.out 2>&1 || { \
+			tail -n 20 PGOBENCH.out; \
+			exit 1; \
+		}; \
 	}
 	tail -n 4 PGOBENCH.out
 	@echo ""
@@ -1065,7 +1066,7 @@ profileclean:
 
 # evaluation network (nnue)
 net:
-	@$(SHELL) ../scripts/net.sh
+	@$(SHELL) ../scripts/fetch-nnue.sh
 
 format:
 	$(CLANG-FORMAT) -i $(SRCS) $(HEADERS) -style=file
