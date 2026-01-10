@@ -157,17 +157,17 @@ Engine::Engine(std::optional<std::string> path) :
           return std::nullopt;
       }));
 
-    options.add("Read only learning", Option(false, [this](const Option& o) {
+    options.add("Read only learning", Option(false, [](const Option& o) {
         LD.set_readonly(static_cast<bool>(o));
         return std::nullopt;
     }));
 
-    options.add("Self Q-learning", Option(false, [this](const Option& o) {
+    options.add("Self Q-learning", Option(false, [&options](const Option& o) {
         LD.set_learning_mode(options, static_cast<bool>(o) ? "Self" : "Standard");
         return std::nullopt;
     }));
 
-    options.add("Experience Book", Option(false, [this](const Option&) {
+    options.add("Experience Book", Option(false, [&options](const Option&) {
         LD.init(options);
         return std::nullopt;
     }));
@@ -208,7 +208,7 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("Variety",
                 Option("Off var Off var Standard var Psychological", "Off"));
 
-    options.add("Concurrent Experience", Option(false, [this](const Option&) {
+    options.add("Concurrent Experience", Option(false, [&options](const Option&) {
         LD.init(options);
         return std::nullopt;
     }));

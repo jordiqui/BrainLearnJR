@@ -24,7 +24,10 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <cstdarg>
 #include <fstream>
+#include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <iterator>
 #include <limits>
@@ -504,5 +507,74 @@ std::string CommandLine::get_working_directory() {
     return workingDirectory;
 }
 
+namespace Util {
+
+std::string format_string(const char* format, ...) {
+    std::array<char, 1024> buffer{};
+    va_list                args;
+    va_start(args, format);
+    const int len = vsnprintf(buffer.data(), buffer.size(), format, args);
+    va_end(args);
+    if (len < 0)
+        return "";
+    if (static_cast<size_t>(len) < buffer.size())
+        return std::string(buffer.data(), static_cast<size_t>(len));
+
+    std::string result(static_cast<size_t>(len), '\0');
+    va_start(args, format);
+    vsnprintf(result.data(), result.size() + 1, format, args);
+    va_end(args);
+    return result;
+}
+
+std::string format_bytes(std::uint64_t bytes, int decimals) {
+    static constexpr std::array<const char*, 5> units = {"B", "KB", "MB", "GB", "TB"};
+    double                                      size  = static_cast<double>(bytes);
+    std::size_t                                 unit  = 0;
+
+    while (size >= 1024.0 && unit + 1 < units.size())
+    {
+        size /= 1024.0;
+        ++unit;
+    }
+
+    std::ostringstream out;
+    if (unit == 0)
+        out << static_cast<std::uint64_t>(size) << ' ' << units[unit];
+    else
+        out << std::fixed << std::setprecision(decimals) << size << ' ' << units[unit];
+    return out.str();
+}
+
+std::string map_path(const std::string& path) {
+    if (path.empty())
+        return path;
+
+    std::filesystem::path resolved(path);
+    if (resolved.is_relative())
+        resolved = std::filesystem::current_path() / resolved;
+    return resolved.lexically_normal().string();
+}
+
+bool is_empty_filename(std::string_view filename) {
+    return filename.empty() || filename == "<empty>";
+}
+
+bool is_same_file(const std::string& path1, const std::string& path2) {
+    std::error_code ec;
+    const bool      same = std::filesystem::equivalent(path1, path2, ec);
+    if (ec)
+        return false;
+    return same;
+}
+
+std::uint64_t get_file_size(const std::string& path) {
+    std::error_code ec;
+    const auto      size = std::filesystem::file_size(path, ec);
+    if (ec)
+        return 0;
+    return size;
+}
+}
 
 }  // namespace Brainlearn
