@@ -410,7 +410,9 @@ bool Network<Arch, Transformer>::write_parameters(std::ostream&      stream,
 template class Network<NetworkArchitecture<TransformedFeatureDimensionsBig, L2Big, L3Big>,
                        FeatureTransformer<TransformedFeatureDimensionsBig>>;
 
+#if NNUE_TRANSFORMED_FEATURE_DIMENSIONS_BIG != NNUE_TRANSFORMED_FEATURE_DIMENSIONS_SMALL
 template class Network<NetworkArchitecture<TransformedFeatureDimensionsSmall, L2Small, L3Small>,
                        FeatureTransformer<TransformedFeatureDimensionsSmall>>;
+#endif
 
 }  // namespace Brainlearn::Eval::NNUE

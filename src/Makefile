@@ -858,6 +858,7 @@ endif
 ### needs access to the optimization flags.
 ifeq ($(optimize),yes)
 ifeq ($(debug), no)
+ifneq ($(NO_LTO),yes)
 	ifeq ($(comp),$(filter $(comp),clang icx))
 		CXXFLAGS += -flto=full
 		ifeq ($(comp),icx)
@@ -885,6 +886,7 @@ ifeq ($(debug), no)
 		CXXFLAGS += -flto -flto-partition=one
 		LDFLAGS += $(CXXFLAGS) -save-temps
 	endif
+endif
 endif
 endif
 
@@ -1002,7 +1004,13 @@ endif
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_make)
 	@echo ""
 	@echo "Step 2/4. Running benchmark for pgo-build ..."
-	$(PGOBENCH) > PGOBENCH.out 2>&1
+	@$(PGOBENCH) > PGOBENCH.out 2>&1 || { \
+		echo "PGO benchmark failed; falling back to a minimal UCI run."; \
+		printf "uci\nisready\nposition startpos\ngo depth 1\nquit\n" | $(RUN_PREFIX) ./$(EXE) > PGOBENCH.out 2>&1; \
+	} || { \
+		tail -n 20 PGOBENCH.out; \
+		exit 1; \
+	}
 	tail -n 4 PGOBENCH.out
 	@echo ""
 	@echo "Step 3/4. Building optimized executable ..."
@@ -1129,15 +1137,17 @@ FORCE:
 
 clang-profile-make:
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
-	EXTRACXXFLAGS='-fprofile-generate ' \
-	EXTRALDFLAGS=' -fprofile-generate' \
+	NO_LTO=yes \
+	EXTRACXXFLAGS='-fprofile-generate -fno-lto ' \
+	EXTRALDFLAGS=' -fprofile-generate -fno-lto' \
 	all
 
 clang-profile-use:
 	$(XCRUN) $(LLVM_PROFDATA) merge -output=stockfish.profdata *.profraw
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
-	EXTRACXXFLAGS='-fprofile-use=stockfish.profdata' \
-	EXTRALDFLAGS='-fprofile-use ' \
+	NO_LTO=yes \
+	EXTRACXXFLAGS='-fprofile-use=stockfish.profdata -fno-lto' \
+	EXTRALDFLAGS='-fprofile-use -fno-lto' \
 	all
 
 gcc-profile-make:
