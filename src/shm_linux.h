@@ -30,6 +30,7 @@
 #include <new>
 #include <optional>
 #include <pthread.h>
+#include <sys/types.h>
 #include <string>
 #include <inttypes.h>
 #include <type_traits>
