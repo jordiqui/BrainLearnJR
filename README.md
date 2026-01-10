@@ -380,10 +380,10 @@ make -j profile-build
 
 ### NNUE networks
 
-Brainlearn expects the default NNUE files (`nn-c288c895ea92.nnue` and
-`nn-37f18f62d772.nnue`) to live next to the executable, or in the repository
-root during development. You can override the locations via the UCI options
-`EvalFile` and `EvalFileSmall`, or download the defaults with:
+Brainlearn expects the default NNUE files (`nn-2962dca31855.nnue` and
+`nn-37f18f62d772.nnue`) to live in a `networks/` directory next to the
+executable during development. You can override the locations via the UCI
+options `EvalFile` and `EvalFileSmall`, or download the defaults with:
 
 ```
 cd src
@@ -392,8 +392,8 @@ make net
 
 In restricted environments the automatic download may fail (for example,
 returning HTML). In that case, download the files manually from
-https://github.com/official-stockfish/networks and place them next to the
-binary or set the UCI options above.
+https://github.com/official-stockfish/networks and place them in `networks/`
+next to the binary or set the UCI options above.
 
 Detailed compilation instructions for all platforms can be found in our
 [documentation][wiki-compile-link]. Our wiki also has information about
