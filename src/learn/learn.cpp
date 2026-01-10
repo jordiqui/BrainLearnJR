@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdint>
 #include "../uci.h"
+#include "../wdl/win_probability.h"
 
 using namespace std;
 using namespace Brainlearn;
