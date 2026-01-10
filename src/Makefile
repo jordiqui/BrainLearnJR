@@ -994,6 +994,13 @@ profile-build: config-sanity objclean profileclean
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_make)
 	@echo ""
 	@echo "Step 2/4. Running benchmark for pgo-build ..."
+ifeq ($(target_windows),yes)
+ifeq ($(strip $(RUN_PREFIX)),)
+	@echo "Error: RUN_PREFIX is required to run Windows executables for PGO builds."
+	@echo "Set RUN_PREFIX (e.g. to wine) or build a native target."
+	@exit 1
+endif
+endif
 	$(PGOBENCH) > PGOBENCH.out 2>&1
 	tail -n 4 PGOBENCH.out
 	@echo ""
